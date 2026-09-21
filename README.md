@@ -1,11 +1,42 @@
-# tobs_blaine (ESX)
+<div align="center">
 
-Paleto Bay bank heist for ESX FiveM servers. A rewrite of utku's Fleeca bank robbery, so you can rob the Paleto bank like the Fleeca banks.
+# tobs_blaine · ESX
 
-📖 **Full docs:** https://vega421.github.io/script-docs/scripts/tobs-blaine-esx/
+**Paleto Bay bank heist for FiveM**
 
-**Download:** get the ready-to-use zip from [Releases](https://github.com/Vega421/tobs_blaineESX/releases/latest). The resource source is in the [`tobs_blaine`](tobs_blaine) folder.
+[![Release](https://img.shields.io/github/v/release/Vega421/tobs_blaineESX?style=flat-square&color=ff6b2c&label=release)](https://github.com/Vega421/tobs_blaineESX/releases/latest)
+[![License](https://img.shields.io/github/license/Vega421/tobs_blaineESX?style=flat-square)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-read-ff6b2c?style=flat-square)](https://vega421.github.io/script-docs/scripts/tobs-blaine/)
 
-## License
+[**Download**](https://github.com/Vega421/tobs_blaineESX/releases/latest) · [Documentation](https://vega421.github.io/script-docs/scripts/tobs-blaine/) · [Changelog](CHANGELOG.md) · [Report a problem](https://github.com/Vega421/tobs_blaineESX/issues)
 
-GPL-3.0. Based on [utkuali/Fleeca-Bank-Heists](https://github.com/utkuali/Fleeca-Bank-Heists) by utku, which is also GPL-3.0. You can use, change and share this script, as long as your version stays open source under GPL-3.0 and keeps this credit.
+</div>
+
+---
+
+Hack the security panel, open the vault and grab the cash from three trolleys before the police arrive.
+
+## Features
+
+- Hacking minigame, police alerts and three cash trolleys
+- Server-side anti-cheat, Discord logs and an admin reset command
+- Uses ox_lib, ox_target and your dispatch script when you have them
+- Rewards as cash or items, optional thermite-style vault step
+- English and Danish, easy to translate, more banks from the config
+- Almost no performance cost when nobody is near the bank
+
+## Install
+
+1. Download the zip from [Releases](https://github.com/Vega421/tobs_blaineESX/releases/latest) and unzip it into `resources/`.
+2. Run `tobs_blaine/items.sql`, or add `id_card_f` to ox_inventory.
+3. Add `ensure tobs_blaine` to `server.cfg` below `ensure es_extended`.
+
+See the [installation guide](https://vega421.github.io/script-docs/scripts/tobs-blaine/installation/) for details.
+
+**Requires:** [es_extended](https://github.com/esx-framework/esx_core) (ESX Legacy or older) · [ox_lib](https://github.com/overextended/ox_lib) (recommended) · [ox_target](https://github.com/overextended/ox_target) (optional)
+
+Using a different framework? See the [vRP version](https://github.com/Vega421/tobs_blaine).
+
+## Credits and license
+
+Made by Vega, based on [utkuali/Fleeca-Bank-Heists](https://github.com/utkuali/Fleeca-Bank-Heists). Licensed under [GPL-3.0](LICENSE): you can use, change and share it, as long as your version stays open source under GPL-3.0 and keeps the credits.
