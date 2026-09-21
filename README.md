@@ -6,9 +6,9 @@
 
 [![Release](https://img.shields.io/github/v/release/Vega421/tobs_blaineESX?style=flat-square&color=ff6b2c&label=release)](https://github.com/Vega421/tobs_blaineESX/releases/latest)
 [![License](https://img.shields.io/github/license/Vega421/tobs_blaineESX?style=flat-square)](LICENSE)
-[![Docs](https://img.shields.io/badge/docs-read-ff6b2c?style=flat-square)](https://vega421.github.io/script-docs/scripts/tobs-blaine/)
+[![Docs](https://img.shields.io/badge/docs-read-ff6b2c?style=flat-square)](https://vega421.github.io/scripts/tobs-blaine/)
 
-[**Download**](https://github.com/Vega421/tobs_blaineESX/releases/latest) · [Documentation](https://vega421.github.io/script-docs/scripts/tobs-blaine/) · [Changelog](CHANGELOG.md) · [Report a problem](https://github.com/Vega421/tobs_blaineESX/issues)
+[**Download**](https://github.com/Vega421/tobs_blaineESX/releases/latest) · [Documentation](https://vega421.github.io/scripts/tobs-blaine/) · [Changelog](CHANGELOG.md) · [Report a problem](https://github.com/Vega421/tobs_blaineESX/issues)
 
 </div>
 
@@ -34,7 +34,7 @@ Hack the security panel, open the vault and grab the cash from three trolleys be
 2. Run `tobs_blaine/items.sql`, or add `id_card_f` to ox_inventory.
 3. Add `ensure tobs_blaine` to `server.cfg` below `ensure es_extended`.
 
-See the [installation guide](https://vega421.github.io/script-docs/scripts/tobs-blaine/installation/) for details.
+See the [installation guide](https://vega421.github.io/scripts/tobs-blaine/installation/) for details.
 
 **Requires:** [es_extended](https://github.com/esx-framework/esx_core) (ESX Legacy or older) · [ox_lib](https://github.com/overextended/ox_lib) (recommended) · [ox_target](https://github.com/overextended/ox_target) (optional)
 

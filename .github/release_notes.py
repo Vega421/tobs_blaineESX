@@ -10,7 +10,7 @@ FRAMEWORK = "ESX"
 ZIP = "tobs_blaine-esx-v{version}.zip"
 DEPENDENCY = "es_extended"
 ITEMS = "Run `items.sql` on your database, or add `id_card_f` to ox_inventory."
-DOCS = "https://vega421.github.io/script-docs/scripts/tobs-blaine/"
+DOCS = "https://vega421.github.io/scripts/tobs-blaine/"
 
 version = sys.argv[1].lstrip("v")
 changelog = open("CHANGELOG.md", encoding="utf-8").read()

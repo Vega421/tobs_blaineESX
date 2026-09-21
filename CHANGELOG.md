@@ -2,7 +2,7 @@
 
 All notable changes to tobs_blaine (ESX). Each version is also a [GitHub release](https://github.com/Vega421/tobs_blaineESX/releases) with a ready-to-use zip.
 
-Full documentation: https://vega421.github.io/script-docs/scripts/tobs-blaine/
+Full documentation: https://vega421.github.io/scripts/tobs-blaine/
 
 ## 1.5.0 · 2026-09-21
 
