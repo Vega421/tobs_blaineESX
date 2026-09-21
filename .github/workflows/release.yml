@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build zip
+        run: |
+          mkdir -p dist/tobs_blaine
+          cp -r tobs_blaine/. LICENSE dist/tobs_blaine/
+          cd dist && zip -r "tobs_blaine-esx-${GITHUB_REF_NAME}.zip" tobs_blaine
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          body: |
+            **Install:** download `tobs_blaine-esx-${{ github.ref_name }}.zip` below, unzip it into your server's `resources` folder and add `ensure tobs_blaine` to `server.cfg`.
+
+            📖 Full docs and changelog: https://vega421.github.io/script-docs/scripts/tobs-blaine-esx/
