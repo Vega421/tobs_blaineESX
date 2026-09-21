@@ -54,6 +54,7 @@ load(ROOT .. "config/config.lua"); load(ROOT .. "locales/locales.lua"); load(ROO
 TOB.Banks.F6.enabled = false
 TOB.Banks.BROKEN = {label = "Broken bank", doors = {}}  -- missing settings: must be skipped, not crash
 TOB.mincash, TOB.maxcash = 6500, 3000                   -- wrong way round: must be swapped
+TOB.SpecialTrolleyChance = 0  -- random gold/diamond trolleys would make payout checks flaky; test 26 turns them on
 SV.Webhook = "https://discord.test/hook"
 load(ROOT .. "server/main.lua")
 
