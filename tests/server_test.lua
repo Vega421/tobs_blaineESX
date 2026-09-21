@@ -287,5 +287,64 @@ LOOP_LIMIT = nil; os.time = realos
 check("stuck heist ended by safety net", safety == true and last("TOB_fh:forceReset") ~= nil)
 PEDS = nil
 
+-- 26. special trolley pays the multiplier, and the loot counter and totals are sent
+commands[SV.ResetCommand](0, {})
+for _, b in pairs(TOB.Banks) do b.lastrobbed = 0 end
+TOB.SpecialTrolleyChance = 100
+local P2 = TOB.Banks.B1.doors.startloc
+PEDS = {[1] = 11, [2] = 22}; POS = {[11] = vector3(P2.x, P2.y, P2.z), [22] = vector3(P2.x, P2.y, P2.z)}
+INV[1] = {id_card_f = 1}; clear()
+fire(1, "TOB_fh:startcheck", "B1")
+local outcome = last("TOB_fh:outcome")
+local special = outcome.args[3]
+local slot, kind = next(special or {})
+check("special trolley picked and sent to the robber", slot ~= nil and TOB.SpecialTrolleys[kind] ~= nil)
+check("alarm switched on for Paleto", last("TOB_fh:alarm") and last("TOB_fh:alarm").args[2] == true)
+fire(1, "TOB_fh:startLoot", nil, "B1")
+check("loot phase carries the special trolley", last("TOB_fh:startLoot_c").args[1].special[slot] == kind)
+local tr = TOB.Banks.B1[slot]
+POS[22] = vector3(tr.x, tr.y, tr.z)
+fire(2, "TOB_fh:lootup", "B1", "Loot" .. slot:sub(-1))
+TOB.mincash, TOB.maxcash = 1000, 1000
+local m0 = MONEY[2] or 0; clear()
+now = now + 400; fire(2, "TOB_fh:rewardCash")
+check("special trolley multiplier", (MONEY[2] or 0) - m0 == math.floor(1000 * TOB.SpecialTrolleys[kind].multiplier))
+check("loot counter event", last("TOB_fh:grabbed") and last("TOB_fh:grabbed").args[1] == math.floor(1000 * TOB.SpecialTrolleys[kind].multiplier))
+TOB.mincash, TOB.maxcash = 3000, 6500
+TOB.SpecialTrolleyChance = 0
+-- 27. deposit boxes
+local box = TOB.Banks.B1.boxes[1]
+POS[22] = vector3(box.x, box.y, box.z); clear()
+fire(2, "TOB_fh:drillBox", "B1", 1)
+check("box can't be drilled while the vault is closed", last("TOB_fh:drillResult") == nil)
+fire(1, "TOB_fh:toggleVault", "B1", false)
+TOB.DrillItem = "drill"; clear()
+fire(2, "TOB_fh:drillBox", "B1", 1)
+check("box needs a drill", last("TOB_fh:drillResult").args[3] == false and last("TOB_fh:drillResult").args[4] == "no_drill")
+INV[2].drill = 1; clear()
+fire(2, "TOB_fh:drillBox", "B1", 1)
+check("drilling starts", last("TOB_fh:drillResult").args[3] == true and last("TOB_fh:boxState").args[3] == "busy")
+check("drill is not used up", INV[2].drill == 1)
+INV[3] = {drill = 1}; PEDS[3] = 33; POS[33] = vector3(box.x, box.y, box.z); clear()
+fire(3, "TOB_fh:drillBox", "B1", 1)
+check("second player can't drill the same box", last("TOB_fh:drillResult").args[4] == "box_busy")
+local m1 = MONEY[2] or 0; clear()
+fire(2, "TOB_fh:drillDone", "B1", 1, true)
+check("finishing too fast is blocked", last("TOB_fh:boxReward") == nil and (MONEY[2] or 0) == m1)
+TOB.DrillRewards = {{type = "money", min = 5000, max = 5000, chance = 1}}
+now = now + TOB.DrillTime; clear()
+fire(2, "TOB_fh:drillDone", "B1", 1, true)
+check("box pays out after drilling", (MONEY[2] or 0) - m1 == 5000 and last("TOB_fh:boxState").args[3] == "opened")
+clear(); fire(2, "TOB_fh:drillBox", "B1", 1)
+check("opened box can't be drilled again", last("TOB_fh:drillResult") == nil)
+-- 28. heist end: totals, alarm off, boxes reset
+clear(); fire(1, "TOB_fh:setCooldown", "B1")
+local totals = 0
+for _, e in ipairs(sent) do if e.name == "TOB_fh:heistTotal" then totals = totals + 1 end end
+check("everyone paid gets their total", totals >= 1)
+check("alarm switched off", last("TOB_fh:alarm") and last("TOB_fh:alarm").args[2] == false)
+check("boxes reset", last("TOB_fh:boxesReset") ~= nil)
+PEDS = nil
+
 realprint(("%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

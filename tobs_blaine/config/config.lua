@@ -38,6 +38,38 @@ TOB.RewardItem = "" -- give this item instead of money, e.g. "markedbills". "" =
 TOB.RewardItemCount = "cash" -- "cash" = item count equals the cash amount (money-like items), or a number of items per pile (e.g. 1 for bags)
 TOB.MaxPiles = 60 -- anti-cheat: most cash piles one player can be paid for per trolley
 
+-- Animations and sound
+TOB.LaptopHack = true -- laptop hacking animation at the panel during the hack
+TOB.VaultItemAnim = "thermite" -- animation for TOB.VaultItem: "thermite" (charge + burning sparks) or "weld"
+TOB.Alarm = true -- play the bank's alarm (banks with alarm = "...") until the heist ends. Fleeca banks use a silent alarm
+
+-- Grabbing
+TOB.StopGrabKey = 73 -- key to stop grabbing early and keep what you grabbed (73 = X). false = can't stop
+TOB.LootCounter = true -- show the cash grabbed on screen, and everyone's total at the end
+
+-- Special trolleys: sometimes one trolley holds gold or diamonds and pays more
+TOB.SpecialTrolleyChance = 25 -- % chance per heist that one trolley is special (0 = off)
+TOB.SpecialTrolleys = {
+    gold = {model = "ch_prop_gold_trolly_01a", pile = "ch_prop_gold_bar_01a", empty = 2714348429, multiplier = 2.0, item = ""},
+    diamond = {model = "ch_prop_diamond_trolly_01a", pile = "ch_prop_vault_dimaondbox_01a", empty = 881130828, multiplier = 3.0, item = ""},
+    -- item = "goldbar" pays that item (1 per pile) instead of cash
+}
+
+-- Deposit boxes in the vault: drill them open while the vault is open
+TOB.DepositBoxes = true
+TOB.DrillItem = "drill" -- item needed to drill (not used up). "" = no item needed
+TOB.DrillItemLabel = "drill" -- name shown to players
+TOB.DrillTime = 15000 -- milliseconds per box
+TOB.DrillMinigame = {"easy", "medium"} -- ox_lib skill check while drilling (empty = none)
+-- What a box can contain. chance = weight. type "money" or "item" (the item must exist in your inventory)
+TOB.DrillRewards = {
+    {type = "money", min = 1500, max = 4000, chance = 60},
+    {type = "money", min = 5000, max = 12000, chance = 25},
+    {type = "nothing", chance = 15},
+    -- {type = "item", name = "goldbar", min = 1, max = 3, chance = 10},
+    -- {type = "item", name = "rolex", min = 1, max = 2, chance = 10},
+}
+
 -- Interaction and UI
 TOB.Target = "auto" -- "auto" (ox_target if running, otherwise press E), "ox_target" or "none" (always press E)
 TOB.Progress = "auto" -- "auto" (ox_lib if running, otherwise progressBars), "ox_lib" or "progressBars"
@@ -63,11 +95,13 @@ TOB.door = "v_ilev_cbankvaulgate01"
 
 -- To add a bank, copy a block, give it a new name (for example B2) and fill in its positions.
 -- enabled = false hides a bank. doors.secondloc adds an inner gate the robber has to hack (like Fleeca).
--- Fleeca positions are from utkuali/Fleeca-Bank-Heists (GPL-3.0).
+-- Fleeca positions are from utkuali/Fleeca-Bank-Heists (GPL-3.0). Deposit box positions (boxes) are from
+-- qbcore-framework/qb-bankrobbery (GPL-3.0).
 TOB.Banks = {
     B1 = {
         label = "Paleto Bay (Blaine County Savings)",
         enabled = true,
+        alarm = "PALETO_BAY_SCORE_ALARM",
         doors = {
             startloc = {x = -105.44020080566, y = 6472.8505859375, z = 31.62672996521, h = 10.240501403809, animcoords = {x = -105.46078491211, y = 6471.5737304688, z = 30.626703262329, h = 43.363094329834}}
         },
@@ -84,6 +118,7 @@ TOB.Banks = {
             vector3(-102.97591400146, 6477.0712890625, 31.62670135498),
             vector3(-105.05332183838, 6478.5517578125, 31.626705169678)
         },
+        boxes = {vector3(-107.4, 6473.87, 31.62), vector3(-107.66, 6475.61, 31.62), vector3(-103.52, 6475.03, 31.62), vector3(-102.3, 6476.13, 31.66), vector3(-102.43, 6477.45, 31.67), vector3(-103.97, 6478.97, 31.62), vector3(-105.39, 6479.19, 31.67), vector3(-106.57, 6478.01, 31.62)},
         onaction = false,
         lastrobbed = 0
     },
@@ -105,6 +140,7 @@ TOB.Banks = {
         trolley2 = {x = 311.51, y = -288.54, z = 53.14, h = -15},
         trolley3 = {x = 314.49, y = -283.65, z = 53.14, h = 160},
         objects = {vector3(313.45, -289.24, 53.14), vector3(311.51, -288.54, 53.14), vector3(314.49, -283.65, 53.14)},
+        boxes = {vector3(311.16, -287.71, 54.14), vector3(311.86, -286.21, 54.14), vector3(313.39, -289.15, 54.14), vector3(311.7, -288.45, 54.14), vector3(314.23, -288.77, 54.14), vector3(314.83, -287.33, 54.14), vector3(315.24, -284.85, 54.14), vector3(314.08, -283.38, 54.14)},
         onaction = false,
         lastrobbed = 0
     },
@@ -126,6 +162,7 @@ TOB.Banks = {
         trolley2 = {x = 149.21, y = -1051.07, z = 28.35, h = -15},
         trolley3 = {x = 150.23, y = -1045.4, z = 28.35, h = 160},
         objects = {vector3(147.25, -1050.38, 28.35), vector3(149.21, -1051.07, 28.35), vector3(150.23, -1045.4, 28.35)},
+        boxes = {vector3(149.84, -1044.9, 29.34), vector3(151.16, -1046.64, 29.34), vector3(147.16, -1047.72, 29.34), vector3(146.54, -1049.28, 29.34), vector3(146.88, -1050.33, 29.34), vector3(150, -1050.67, 29.34), vector3(149.47, -1051.28, 29.34), vector3(150.58, -1049.09, 29.34)},
         onaction = false,
         lastrobbed = 0
     },
@@ -147,6 +184,7 @@ TOB.Banks = {
         trolley2 = {x = -1205.61, y = -338.24, z = 36.76, h = 30},
         trolley3 = {x = -1209.1, y = -333.59, z = 36.76, h = 210},
         objects = {vector3(-1207.5, -339.2, 36.76), vector3(-1205.61, -338.24, 36.76), vector3(-1209.1, -333.59, 36.76)},
+        boxes = {vector3(-1209.68, -333.65, 37.75), vector3(-1207.46, -333.77, 37.75), vector3(-1209.45, -337.47, 37.75), vector3(-1208.65, -339.06, 37.75), vector3(-1207.75, -339.42, 37.75), vector3(-1205.28, -338.14, 37.75), vector3(-1205.08, -337.28, 37.75), vector3(-1205.92, -335.75, 37.75)},
         onaction = false,
         lastrobbed = 0
     },
@@ -168,6 +206,7 @@ TOB.Banks = {
         trolley2 = {x = -2952.57, y = 485.18, z = 14.68, h = 85},
         trolley3 = {x = -2958.35, y = 484.69, z = 14.68, h = 270},
         objects = {vector3(-2952.69, 483.34, 14.68), vector3(-2952.57, 485.18, 14.68), vector3(-2958.35, 484.69, 14.68)},
+        boxes = {vector3(-2958.54, 484.1, 15.67), vector3(-2957.3, 485.95, 15.67), vector3(-2955.09, 482.43, 15.67), vector3(-2953.26, 482.42, 15.67), vector3(-2952.63, 483.09, 15.67), vector3(-2952.45, 485.66, 15.67), vector3(-2953.13, 486.26, 15.67), vector3(-2954.98, 486.37, 15.67)},
         onaction = false,
         lastrobbed = 0
     },
@@ -189,6 +228,7 @@ TOB.Banks = {
         trolley2 = {x = -351.57, y = -60.09, z = 48.01, h = -15},
         trolley3 = {x = -350.57, y = -54.45, z = 48.01, h = 160},
         objects = {vector3(-353.34, -59.48, 48.01), vector3(-351.57, -60.09, 48.01), vector3(-350.57, -54.45, 48.01)},
+        boxes = {vector3(-350.99, -54.13, 49.01), vector3(-349.53, -55.77, 49.01), vector3(-353.54, -56.94, 49.01), vector3(-354.09, -58.55, 49.01), vector3(-353.81, -59.48, 49.01), vector3(-349.8, -58.3, 49.01), vector3(-351.14, -60.37, 49.01), vector3(-350.4, -59.92, 49.01)},
         onaction = false,
         lastrobbed = 0
     },
@@ -210,6 +250,7 @@ TOB.Banks = {
         trolley2 = {x = 1172.27, y = 2716.67, z = 37.07, h = -180},
         trolley3 = {x = 1173.23, y = 2711.02, z = 37.07, h = 0},
         objects = {vector3(1174.24, 2716.69, 37.07), vector3(1172.27, 2716.67, 37.07), vector3(1173.23, 2711.02, 37.07)},
+        boxes = {vector3(1173.69, 2710.76, 38.07), vector3(1171.78, 2711.94, 38.07), vector3(1175.25, 2714.51, 38.07), vector3(1175.26, 2715.97, 38.07), vector3(1174.27, 2716.83, 38.07), vector3(1172.32, 2716.82, 38.07), vector3(1171.25, 2716.08, 38.07), vector3(1171.23, 2714.44, 38.07)},
         onaction = false,
         lastrobbed = 0
     }

@@ -4,6 +4,17 @@ All notable changes to tobs_blaine (ESX). Each version is also a [GitHub release
 
 Full documentation: https://vega421.github.io/script-docs/scripts/tobs-blaine/
 
+## 1.5.0 · 2026-09-21
+
+- **Deposit boxes:** drill the safe deposit boxes in every vault (8 per bank) with the heist drilling animation and an ox_lib skill check. Rewards come from `TOB.DrillRewards` (cash, items or nothing). Needs a `drill` item by default. Box positions from qbcore-framework/qb-bankrobbery (GPL-3.0)
+- **Laptop hack:** the Pacific Standard laptop hacking animation during the hack (`TOB.LaptopHack`)
+- **Thermite:** the vault item now plants a thermal charge with burning sparks everyone nearby can see (`TOB.VaultItemAnim`)
+- **Bank alarm:** the real Paleto Bay bank alarm plays during the heist. Fleeca banks use a silent alarm (`TOB.Alarm`)
+- **Gold and diamond trolleys:** sometimes one trolley holds gold (2× pay) or diamonds (3× pay) (`TOB.SpecialTrolleys`, `TOB.SpecialTrolleyChance`)
+- **Stop grabbing early:** press X to stop and keep what's in the bag (`TOB.StopGrabKey`)
+- **Loot counter:** see the cash you're grabbing on screen, and everyone's total when the heist ends (`TOB.LootCounter`)
+- Fixed grabbing getting stuck if the trolley was already gone, and a model loading check that didn't wait for all models
+
 ## 1.4.1 · 2026-09-21
 
 Security and reliability fixes from a full audit:

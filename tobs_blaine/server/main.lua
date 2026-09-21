@@ -48,6 +48,8 @@ local GateReady = {}  -- [bank] = true once the robber hacked the inner gate (ba
 local LastHeistEnd = 0 -- os.time() the last heist on any bank ended (TOB.GlobalCooldown)
 local RestartSoon = false -- set when txAdmin announces a restart (SV.BlockBeforeRestart)
 local VaultMoved = {}  -- [bank] = GetGameTimer() of the last vault open/close, so only that move's angle is accepted
+local Special = {}     -- [bank] = {trolley2 = "gold"}: special trolleys for the running heist
+local Boxes = {}       -- [bank] = {[box] = {opened = true} or {busy = src, started = ms}}
 local Trolleys = {Loot1 = "trolley1", Loot2 = "trolley2", Loot3 = "trolley3"}
 local GRAB_WINDOW = 50000 -- ms a player can collect piles after starting a trolley (the animation is about 40 s)
 local MIN_PILE_GAP = 250  -- ms between two piles
@@ -120,6 +122,11 @@ local function IsHeistOwner(src, bank)
     return TOB.Banks[bank] ~= nil and TOB.Banks[bank].onaction and Owner[bank] == src
 end
 
+local function Money(n)
+    local s = tostring(math.floor(n))
+    return (s:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", ""))
+end
+
 local function Duration(seconds)
     return ("%dm %02ds"):format(math.floor(seconds / 60), seconds % 60)
 end
@@ -133,6 +140,14 @@ local function EndHeist(bank, reason, cooldown)
         total = total + p.cash
         local items = (TOB.RewardItem or "") ~= "" and (" (%d × %s)"):format(p.items, TOB.RewardItem) or ""
         lines[#lines + 1] = ("%s: $%d%s from %d piles"):format(p.name, p.cash, items, p.piles)
+    end
+    if Started[bank] and TOB.LootCounter then
+        for id, p in pairs(Payouts[bank] or {}) do
+            TriggerClientEvent("TOB_fh:heistTotal", id, Money(p.cash), Money(total))
+        end
+    end
+    if Started[bank] and TOB.Alarm and TOB.Banks[bank].alarm then
+        TriggerClientEvent("TOB_fh:alarm", -1, bank, false)
     end
     if Started[bank] then
         Log("Heist ended: " .. BankName(bank), ("Reason: %s\nDuration: %s\nTotal: $%d\n%s"):format(
@@ -150,6 +165,12 @@ local function EndHeist(bank, reason, cooldown)
     Payouts[bank] = nil
     VaultReady[bank] = nil
     GateReady[bank] = nil
+    Special[bank] = nil
+    TOB.Banks[bank].special = nil
+    if Boxes[bank] then
+        Boxes[bank] = nil
+        TriggerClientEvent("TOB_fh:boxesReset", -1, bank)
+    end
     for id, l in pairs(Looting) do
         if l.bank == bank then Looting[id] = nil end
     end
@@ -192,6 +213,32 @@ local function CrewNear(bank)
     return count
 end
 
+-- Adds to a player's payout for the Discord log and the loot counter. Returns their new total.
+local function RecordPayout(bank, src, cash, items)
+    if Payouts[bank] == nil then return cash end
+    local p = Payouts[bank][src]
+    if not p then
+        p = {name = GetPlayerName(src) or tostring(src), cash = 0, items = 0, piles = 0}
+        Payouts[bank][src] = p
+    end
+    p.cash = p.cash + cash
+    p.items = p.items + (items or 0)
+    return p.cash
+end
+
+-- Picks a reward from TOB.DrillRewards by weight
+local function RollBoxReward()
+    local total = 0
+    for _, r in ipairs(TOB.DrillRewards or {}) do total = total + (r.chance or 0) end
+    if total <= 0 then return nil end
+    local roll = math.random() * total
+    for _, r in ipairs(TOB.DrillRewards) do
+        roll = roll - (r.chance or 0)
+        if roll <= 0 then return r end
+    end
+    return TOB.DrillRewards[#TOB.DrillRewards]
+end
+
 local function GiveReward(src, amount)
     if TOB.RewardItem ~= nil and TOB.RewardItem ~= "" then
         local count = TOB.RewardItemCount == "cash" and amount or (tonumber(TOB.RewardItemCount) or 1)
@@ -214,7 +261,7 @@ AddEventHandler("TOB_fh:startcheck", function(bank)
         return
     end
 
-    local globalLeft = (TOB.GlobalCooldown or 0) - (os.time() - LastHeistEnd)
+    local globalLeft = (TOB.GlobalCooldown or 0) > 0 and TOB.GlobalCooldown - (os.time() - LastHeistEnd) or 0
 
     if RestartSoon then
         TriggerClientEvent("TOB_fh:outcome", _source, false, L("restart_soon"))
@@ -239,7 +286,17 @@ AddEventHandler("TOB_fh:startcheck", function(bank)
         Looted[bank] = {}
         Payouts[bank] = {}
         Bridge.RemoveItem(_source, "id_card_f", 1)
-        TriggerClientEvent("TOB_fh:outcome", _source, true, bank)
+        Special[bank] = nil
+        local kinds = {}
+        for kind, _ in pairs(TOB.SpecialTrolleys or {}) do kinds[#kinds + 1] = kind end
+        table.sort(kinds)
+        if #kinds > 0 and math.random(100) <= (TOB.SpecialTrolleyChance or 0) then
+            Special[bank] = {["trolley" .. math.random(3)] = kinds[math.random(#kinds)]}
+        end
+        TriggerClientEvent("TOB_fh:outcome", _source, true, bank, Special[bank])
+        if TOB.Alarm and TOB.Banks[bank].alarm then
+            TriggerClientEvent("TOB_fh:alarm", -1, bank, true)
+        end
         TriggerClientEvent("TOB_fh:policenotify", -1, bank)
         Log("Heist started: " .. BankName(bank), PlayerLabel(_source) .. " started a heist.", 16740396)
     end
@@ -364,6 +421,7 @@ AddEventHandler("TOB_fh:startLoot", function(_, name)
     end
     -- Everyone gets the loot phase, so crew members arriving later can still loot.
     -- Bank data comes from the server, and lootup checks the player is at the trolley.
+    TOB.Banks[name].special = Special[name]
     TriggerClientEvent("TOB_fh:startLoot_c", -1, TOB.Banks[name], name)
 end)
 
@@ -400,17 +458,110 @@ AddEventHandler("TOB_fh:rewardCash", function()
     l.last = now
 
     local amount = math.random(TOB.mincash, TOB.maxcash)
-    local items = GiveReward(_source, amount)
-    local p = Payouts[l.bank] and Payouts[l.bank][_source]
-    if Payouts[l.bank] and not p then
-        p = {name = GetPlayerName(_source) or tostring(_source), cash = 0, items = 0, piles = 0}
-        Payouts[l.bank][_source] = p
+    local items = 0
+    local kind = Special[l.bank] and Special[l.bank][l.trolley]
+    local special = kind and TOB.SpecialTrolleys and TOB.SpecialTrolleys[kind]
+    if special then
+        amount = math.floor(amount * (special.multiplier or 1))
     end
-    if p then
-        p.cash = p.cash + amount
-        p.items = p.items + items
-        p.piles = p.piles + 1
+    if special and special.item and special.item ~= "" then
+        Bridge.AddItem(_source, special.item, 1)
+        items = 1
+    else
+        items = GiveReward(_source, amount)
     end
+    local mine = RecordPayout(l.bank, _source, amount, items)
+    if Payouts[l.bank] and Payouts[l.bank][_source] then
+        Payouts[l.bank][_source].piles = Payouts[l.bank][_source].piles + 1
+    end
+    if TOB.LootCounter then
+        TriggerClientEvent("TOB_fh:grabbed", _source, amount, Money(mine))
+    end
+end)
+
+-- DEPOSIT BOXES --
+-- Drilled while the vault is open. The server checks the box, the player, the drill item
+-- and that the drilling took as long as it should before paying.
+
+local function VaultOpen(bank)
+    return TOB.Banks[bank] ~= nil and TOB.Banks[bank].onaction and Doors[bank][2].locked == false
+end
+
+RegisterServerEvent("TOB_fh:drillBox")
+AddEventHandler("TOB_fh:drillBox", function(bank, box)
+    local _source = source
+
+    if not TOB.DepositBoxes or not VaultOpen(bank) or Bridge.IsPolice(_source) then return end
+    local pos = TOB.Banks[bank].boxes and TOB.Banks[bank].boxes[box]
+    if pos == nil then return end
+    if not IsNear(_source, pos, 3.0) then
+        Flag(_source, "Tried to drill a deposit box at " .. BankName(bank) .. " from far away.")
+        return
+    end
+    Boxes[bank] = Boxes[bank] or {}
+    local state = Boxes[bank][box]
+    if state and state.opened then return end
+    if state and state.busy and state.busy ~= _source then
+        TriggerClientEvent("TOB_fh:drillResult", _source, bank, box, false, "box_busy")
+        return
+    end
+    if TOB.DrillItem and TOB.DrillItem ~= "" and not Bridge.HasItem(_source, TOB.DrillItem, 1) then
+        TriggerClientEvent("TOB_fh:drillResult", _source, bank, box, false, "no_drill")
+        return
+    end
+    Boxes[bank][box] = {busy = _source, started = GetGameTimer()}
+    TriggerClientEvent("TOB_fh:boxState", -1, bank, box, "busy")
+    TriggerClientEvent("TOB_fh:drillResult", _source, bank, box, true)
+end)
+
+RegisterServerEvent("TOB_fh:drillDone")
+AddEventHandler("TOB_fh:drillDone", function(bank, box, success)
+    local _source = source
+    local state = Boxes[bank] and Boxes[bank][box]
+
+    if state == nil or state.busy ~= _source or not VaultOpen(bank) then return end
+    if not success then
+        Boxes[bank][box] = nil
+        TriggerClientEvent("TOB_fh:boxState", -1, bank, box, nil)
+        return
+    end
+    if GetGameTimer() - state.started < (TOB.DrillTime or 0) - 2000 then
+        Flag(_source, "Finished drilling a deposit box at " .. BankName(bank) .. " faster than possible.")
+        return
+    end
+    if not IsNear(_source, TOB.Banks[bank].boxes[box], 3.0) then
+        Flag(_source, "Finished drilling a deposit box at " .. BankName(bank) .. " from far away.")
+        return
+    end
+    Boxes[bank][box] = {opened = true}
+    TriggerClientEvent("TOB_fh:boxState", -1, bank, box, "opened")
+
+    local r = RollBoxReward()
+    if r == nil or r.type == "nothing" then
+        TriggerClientEvent("TOB_fh:boxReward", _source, L("box_empty"))
+    elseif r.type == "money" then
+        local amount = math.random(r.min or 0, r.max or r.min or 0)
+        Bridge.AddMoney(_source, amount, TOB.black)
+        RecordPayout(bank, _source, amount, 0)
+        TriggerClientEvent("TOB_fh:boxReward", _source, L("box_money", Money(amount)))
+    elseif r.type == "item" and r.name then
+        local count = math.random(r.min or 1, r.max or r.min or 1)
+        Bridge.AddItem(_source, r.name, count)
+        RecordPayout(bank, _source, 0, count)
+        TriggerClientEvent("TOB_fh:boxReward", _source, L("box_item", count, r.label or r.name))
+    end
+end)
+
+-- Thermite sparks for everyone near the vault (the robber's game asks, the server checks)
+RegisterServerEvent("TOB_fh:thermiteFx")
+AddEventHandler("TOB_fh:thermiteFx", function(bank, coords)
+    local _source = source
+
+    if not IsHeistOwner(_source, bank) or not VaultReady[bank] then return end
+    if (type(coords) ~= "vector3" and type(coords) ~= "table") or type(coords.x) ~= "number" then return end
+    local c = vector3(coords.x, coords.y, coords.z)
+    if #(c - vector3(Doors[bank][2].loc.x, Doors[bank][2].loc.y, Doors[bank][2].loc.z)) > 4.0 then return end
+    TriggerClientEvent("TOB_fh:thermiteFx_c", -1, c, TOB.VaultItemTime)
 end)
 
 local EndReasons = {
@@ -429,6 +580,14 @@ AddEventHandler("playerDropped", function()
     local _source = source
 
     Looting[_source] = nil
+    for bank, list in pairs(Boxes) do
+        for box, state in pairs(list) do
+            if state.busy == _source then
+                list[box] = nil
+                TriggerClientEvent("TOB_fh:boxState", -1, bank, box, nil)
+            end
+        end
+    end
     for key, _ in pairs(flagged) do
         if key:sub(1, #tostring(_source) + 1) == tostring(_source) .. "|" then flagged[key] = nil end
     end
