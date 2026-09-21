@@ -1,6 +1,6 @@
 TOB = {}
 
--- Language: "en" (English) or "da" (Danish). Texts are in locales.lua.
+-- Language: "en" (English) or "da" (Danish). Texts are in locales/locales.lua.
 TOB.Locale = "en"
 
 -- Heist

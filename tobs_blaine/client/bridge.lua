@@ -1,4 +1,4 @@
--- ESX bridge (client). Everything framework-specific lives here; the heist itself is in client.lua.
+-- ESX bridge (client). Everything framework-specific lives here; the heist itself is in client/main.lua.
 
 ESX = nil
 local ok, esxObj = pcall(function() return exports["es_extended"]:getSharedObject() end)

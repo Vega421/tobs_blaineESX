@@ -1,4 +1,4 @@
--- tobs_blaine server. Shared by every framework version; framework-specific code is in bridge/server.lua.
+-- tobs_blaine server. Shared by every framework version; framework-specific code is in server/bridge.lua.
 
 -- Door state for every bank, built from the gate and vault settings in TOB.Banks
 Doors = {}

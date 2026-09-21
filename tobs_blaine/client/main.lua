@@ -1,4 +1,4 @@
--- tobs_blaine client. Shared by every framework version; framework-specific code is in bridge/client.lua.
+-- tobs_blaine client. Shared by every framework version; framework-specific code is in client/bridge.lua.
 
 Check = {}          -- [bank] = true while this player has started a heist there
 LootCheck = {}      -- [bank] = {Stop, Loot1, Loot2, Loot3}
@@ -14,7 +14,7 @@ local currentcoords = nil
 local dooruse = false
 local timerLeft = 0
 
--- Notifications. Pick a system with TOB.Notify in TOB.lua.
+-- Notifications. Pick a system with TOB.Notify in config/config.lua.
 function Notify(ntype, msg, duration)
     duration = duration or 5000
     local mode = TOB.Notify
@@ -42,7 +42,7 @@ function Notify(ntype, msg, duration)
     end
 end
 
--- Progress bars. Pick a system with TOB.Progress in TOB.lua. Waits until the bar is done.
+-- Progress bars. Pick a system with TOB.Progress in config/config.lua. Waits until the bar is done.
 function Progress(ms, label)
     local mode = TOB.Progress
 
@@ -390,7 +390,7 @@ function StartHeist(name)
     currentname = name
     currentcoords = StartVec(name)
     initiator = true
-    -- Server owners' dispatch integration (TOB.lua). pcall so a broken hook can't stop the heist.
+    -- Server owners' dispatch integration (config/config.lua). pcall so a broken hook can't stop the heist.
     local ok, err = pcall(TOB.DispatchAlert, currentcoords)
     if not ok then
         print("[tobs_blaine] TOB.DispatchAlert error: " .. tostring(err))

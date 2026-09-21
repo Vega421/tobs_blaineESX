@@ -1,4 +1,4 @@
--- ESX bridge (server). Everything framework-specific lives here; the heist itself is in server.lua.
+-- ESX bridge (server). Everything framework-specific lives here; the heist itself is in server/main.lua.
 
 ESX = nil
 -- ESX Legacy uses the export; older ESX versions use the event
