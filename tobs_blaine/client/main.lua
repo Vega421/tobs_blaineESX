@@ -43,7 +43,8 @@ function Notify(ntype, msg, duration)
     end
 end
 
--- Progress bars. Pick a system with TOB.Progress in config/config.lua. Waits until the bar is done.
+-- Progress bars. Pick a system with TOB.Progress in config/config.lua. Waits until the bar is done
+-- and returns false if it was interrupted (for example because the player died).
 function Progress(ms, label)
     local mode = TOB.Progress
 
@@ -51,11 +52,11 @@ function Progress(ms, label)
         mode = GetResourceState("ox_lib") == "started" and "ox_lib" or "progressBars"
     end
     if mode == "ox_lib" then
-        exports.ox_lib:progressBar({duration = ms, label = label, canCancel = false})
-    else
-        exports["progressBars"]:startUI(ms, label)
-        Citizen.Wait(ms)
+        return exports.ox_lib:progressBar({duration = ms, label = label, canCancel = false}) ~= false
     end
+    exports["progressBars"]:startUI(ms, label)
+    Citizen.Wait(ms)
+    return true
 end
 
 -- The hacking minigame. Returns true when passed, or when the minigame is off or ox_lib isn't running.
@@ -429,7 +430,11 @@ function StartHeist(name)
         FailHeist(name, "hack_failed")
         return
     end
-    Progress(TOB.hacktime, L("hacking"))
+    -- The hack fails if the robber is killed during it
+    if not Progress(TOB.hacktime, L("hacking")) or IsEntityDead(PlayerPedId()) then
+        FailHeist(name, "hack_failed")
+        return
+    end
     Notify("success", L("hack_done"))
     PlaySoundFrontend(-1, "ATM_WINDOW", "HUD_FRONTEND_DEFAULT_SOUNDSET")
 

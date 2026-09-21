@@ -1,15 +1,37 @@
 -- tobs_blaine server. Shared by every framework version; framework-specific code is in server/bridge.lua.
 
--- Banks with enabled = false are removed here, so players never see them
+-- CONFIG CHECK --
+-- Banks with enabled = false are removed, and banks with missing settings are skipped with a
+-- console warning, so one typo can't break the whole script.
+local REQUIRED = {"doors", "gate", "vault", "prop", "trolley1", "trolley2", "trolley3", "objects"}
 for bank, b in pairs(TOB.Banks) do
-    if b.enabled == false then TOB.Banks[bank] = nil end
+    local missing = {}
+    for _, field in ipairs(REQUIRED) do
+        if b[field] == nil then missing[#missing + 1] = field end
+    end
+    if b.doors ~= nil and b.doors.startloc == nil then missing[#missing + 1] = "doors.startloc" end
+    if b.enabled == false then
+        TOB.Banks[bank] = nil
+    elseif #missing > 0 then
+        print(("^1[tobs_blaine] Bank %s is missing %s and was skipped. Check config/config.lua.^7"):format(bank, table.concat(missing, ", ")))
+        TOB.Banks[bank] = nil
+    end
+end
+if TOB.mincash > TOB.maxcash then
+    print("^3[tobs_blaine] TOB.mincash is higher than TOB.maxcash, so they were swapped.^7")
+    TOB.mincash, TOB.maxcash = TOB.maxcash, TOB.mincash
+end
+
+-- Banks with an inner gate (doors.secondloc, like Fleeca) keep it locked outside heists
+local function GateLockedByDefault(bank)
+    return TOB.Banks[bank].doors.secondloc ~= nil
 end
 
 -- Door state for every bank, built from the gate and vault settings in TOB.Banks
 Doors = {}
 for bank, b in pairs(TOB.Banks) do
     Doors[bank] = {
-        {loc = b.gate.loc, h = b.gate.h, txtloc = b.gate.txtloc, locked = false},
+        {loc = b.gate.loc, h = b.gate.h, txtloc = b.gate.txtloc, locked = GateLockedByDefault(bank)},
         {loc = b.vault.loc, txtloc = b.vault.txtloc, locked = false},
     }
 end
@@ -25,6 +47,7 @@ local VaultReady = {} -- [bank] = true once TOB.VaultItem has been used
 local GateReady = {}  -- [bank] = true once the robber hacked the inner gate (banks with doors.secondloc)
 local LastHeistEnd = 0 -- os.time() the last heist on any bank ended (TOB.GlobalCooldown)
 local RestartSoon = false -- set when txAdmin announces a restart (SV.BlockBeforeRestart)
+local VaultMoved = {}  -- [bank] = GetGameTimer() of the last vault open/close, so only that move's angle is accepted
 local Trolleys = {Loot1 = "trolley1", Loot2 = "trolley2", Loot3 = "trolley3"}
 local GRAB_WINDOW = 50000 -- ms a player can collect piles after starting a trolley (the animation is about 40 s)
 local MIN_PILE_GAP = 250  -- ms between two piles
@@ -75,7 +98,7 @@ end
 local flagged = {}
 local function Flag(src, reason)
     if not SV.LogAntiCheat then return end
-    local key = tostring(src) .. reason
+    local key = tostring(src) .. "|" .. reason
     if flagged[key] and os.time() - flagged[key] < 60 then return end
     flagged[key] = os.time()
     Log("Suspicious event blocked", PlayerLabel(src) .. "\n" .. reason, 15158332)
@@ -130,10 +153,15 @@ local function EndHeist(bank, reason, cooldown)
     for id, l in pairs(Looting) do
         if l.bank == bank then Looting[id] = nil end
     end
+    if GateLockedByDefault(bank) and not Doors[bank][1].locked then
+        Doors[bank][1].locked = true
+        TriggerClientEvent("TOB_fh:toggleDoor", -1, bank, true)
+    end
 end
 
 local function CloseVault(bank)
     Doors[bank][2].locked = true
+    VaultMoved[bank] = GetGameTimer()
     TriggerClientEvent("TOB_fh:toggleVault", -1, bank, true)
 end
 
@@ -271,7 +299,7 @@ AddEventHandler("TOB_fh:lootup", function(bank, trolley)
     end
 
     Looted[bank][trolley] = true
-    Looting[_source] = {bank = bank, started = GetGameTimer(), last = 0, piles = 0}
+    Looting[_source] = {bank = bank, trolley = Trolleys[trolley], started = GetGameTimer(), last = 0, piles = 0}
     TriggerClientEvent("TOB_fh:lootup_c", -1, bank, trolley)
 end)
 
@@ -310,13 +338,17 @@ AddEventHandler("TOB_fh:toggleVault", function(key, state)
         return
     end
     Doors[key][2].locked = state
+    VaultMoved[key] = GetGameTimer()
     TriggerClientEvent("TOB_fh:toggleVault", -1, key, state)
 end)
 
 RegisterServerEvent("TOB_fh:updateVaultState")
 AddEventHandler("TOB_fh:updateVaultState", function(key, state)
     if Doors[key] == nil or type(state) ~= "number" then return end
+    -- Only the first report within 20 s of a real open/close counts (the animation takes 9 s)
+    if VaultMoved[key] == nil or GetGameTimer() - VaultMoved[key] > 20000 then return end
     if not IsNear(source, Doors[key][2].loc, 60.0) then return end
+    VaultMoved[key] = nil
     Doors[key][2].state = state
     -- Share the final vault angle, so players who weren't nearby see it correctly later
     TriggerClientEvent("TOB_fh:vaultState", -1, key, state)
@@ -330,13 +362,9 @@ AddEventHandler("TOB_fh:startLoot", function(_, name)
         Flag(_source, "Tried to start the loot phase at " .. tostring(name) .. " without being the robber.")
         return
     end
-    -- Everyone near the bank can loot. Bank data comes from the server, not the client.
-    for _, id in ipairs(GetPlayers()) do
-        id = tonumber(id)
-        if id == _source or IsNear(id, TOB.Banks[name].doors.startloc, 60.0) then
-            TriggerClientEvent("TOB_fh:startLoot_c", id, TOB.Banks[name], name)
-        end
-    end
+    -- Everyone gets the loot phase, so crew members arriving later can still loot.
+    -- Bank data comes from the server, and lootup checks the player is at the trolley.
+    TriggerClientEvent("TOB_fh:startLoot_c", -1, TOB.Banks[name], name)
 end)
 
 RegisterServerEvent("TOB_fh:stopHeist")
@@ -356,6 +384,10 @@ AddEventHandler("TOB_fh:rewardCash", function()
     end
     local now = GetGameTimer()
     if now - l.started > GRAB_WINDOW then return end
+    if not IsNear(_source, TOB.Banks[l.bank][l.trolley], 6.0) then
+        Flag(_source, "Asked for heist cash away from the trolley at " .. BankName(l.bank) .. ".")
+        return
+    end
     if now - l.last < MIN_PILE_GAP then
         Flag(_source, "Asked for heist cash faster than the grab animation allows.")
         return
@@ -397,11 +429,35 @@ AddEventHandler("playerDropped", function()
     local _source = source
 
     Looting[_source] = nil
+    for key, _ in pairs(flagged) do
+        if key:sub(1, #tostring(_source) + 1) == tostring(_source) .. "|" then flagged[key] = nil end
+    end
     for bank, owner in pairs(Owner) do
         if owner == _source then
             TriggerClientEvent("TOB_fh:stopHeist_c", -1, bank)
             CloseVault(bank)
             EndHeist(bank, "the robber disconnected")
+        end
+    end
+end)
+
+-- Safety net: a heist that runs far longer than possible is ended, for example if the
+-- robber's game stopped following the heist without disconnecting.
+local function MaxHeistSeconds()
+    return math.ceil(TOB.hacktime / 1000 + (TOB.VaultItemTime or 0) / 1000 + (TOB.GateHackTime or 0) / 1000)
+        + TOB.timer * 2 + TOB.VaultCloseDelay + 300
+end
+
+Citizen.CreateThread(function()
+    while true do
+        Citizen.Wait(30000)
+        for bank, started in pairs(Started) do
+            if os.time() - started > MaxHeistSeconds() then
+                TriggerClientEvent("TOB_fh:stopHeist_c", -1, bank)
+                TriggerClientEvent("TOB_fh:forceReset", -1, bank)
+                CloseVault(bank)
+                EndHeist(bank, "it ran too long and was ended automatically")
+            end
         end
     end
 end)
@@ -435,8 +491,8 @@ RegisterCommand(SV.ResetCommand, function(src, args)
             TriggerClientEvent("TOB_fh:stopHeist_c", -1, bank)
             TriggerClientEvent("TOB_fh:forceReset", -1, bank)
             CloseVault(bank)
-            Doors[bank][1].locked = false
-            TriggerClientEvent("TOB_fh:toggleDoor", -1, bank, false)
+            Doors[bank][1].locked = GateLockedByDefault(bank)
+            TriggerClientEvent("TOB_fh:toggleDoor", -1, bank, Doors[bank][1].locked)
             EndHeist(bank, "reset by an admin", false)
             count = count + 1
         end

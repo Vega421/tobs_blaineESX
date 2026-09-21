@@ -4,6 +4,19 @@ All notable changes to tobs_blaine (ESX). Each version is also a [GitHub release
 
 Full documentation: https://vega421.github.io/script-docs/scripts/tobs-blaine/
 
+## 1.4.1 · 2026-09-21
+
+Security and reliability fixes from a full audit:
+
+- **Security:** heist cash is only paid while the player is at the trolley they're looting
+- **Security:** only the real vault open/close can set the vault door angle, so players can't swing the vault open
+- Heists that get stuck end automatically after the longest possible heist time
+- Fleeca inner gates stay locked outside heists and are relocked afterwards
+- Crew members who arrive after the trolleys spawn can loot too
+- The hack fails if the robber is killed during it
+- Banks with missing settings are skipped with a console warning instead of breaking the script, and `mincash`/`maxcash` in the wrong order are fixed automatically
+- Automated tests run on every push, and a release is only published when they pass
+
 ## 1.4.0 · 2026-09-21
 
 - **All 6 Fleeca banks** included, with an inner gate the robber hacks to reach the last trolley (positions from utkuali/Fleeca-Bank-Heists). Turn them off with `TOB.FleecaBanks = false`
