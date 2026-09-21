@@ -41,7 +41,6 @@ end
 -- Map objects (normally no need to change)
 TOB.vaultdoor = "v_ilev_cbankvauldoor01"
 TOB.door = "v_ilev_cbankvaulgate01"
-TOB.office = "v_ilev_gb_teldr"
 TOB.Banks = {
     B1 = {
         doors = {    
