@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> **This repository has moved to [Vega421/tobs_bankrobbery](https://github.com/Vega421/tobs_bankrobbery).** tobs_bankrobbery is the same heist in one resource for Qbox, ESX, QBCore and vRP. Download the [latest release](https://github.com/Vega421/tobs_bankrobbery/releases/latest) and see the [upgrade steps](https://vega421.github.io/scripts/tobs-bankrobbery/installation/#updating). This repository is archived and no longer updated.
+
 <div align="center">
 
 # tobs_blaine · ESX
