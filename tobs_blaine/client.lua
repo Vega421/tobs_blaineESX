@@ -1,11 +1,18 @@
-ESX = nil
--- ESX Legacy uses the export; older ESX versions use the event
-local ok, esxObj = pcall(function() return exports["es_extended"]:getSharedObject() end)
-if ok and esxObj then
-    ESX = esxObj
-else
-    TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
-end
+-- tobs_blaine client. Shared by every framework version; framework-specific code is in bridge/client.lua.
+
+Check = {}          -- [bank] = true while this player has started a heist there
+LootCheck = {}      -- [bank] = {Stop, Loot1, Loot2, Loot3}
+LootActive = {}     -- [bank] = true while the loot phase is running
+AwaitingVault = {}  -- [bank] = true while the robber still has to use TOB.VaultItem
+Doors = {}
+local ready = false
+local disableinput = false
+local initiator = false
+local startdstcheck = false
+local currentname = nil
+local currentcoords = nil
+local dooruse = false
+local timerLeft = 0
 
 -- Notifications. Pick a system with TOB.Notify in TOB.lua.
 function Notify(ntype, msg, duration)
@@ -18,7 +25,7 @@ function Notify(ntype, msg, duration)
         elseif GetResourceState("mythic_notify") == "started" then
             mode = "mythic_notify"
         else
-            mode = "esx"
+            mode = Bridge.NotifyFallback
         end
     end
 
@@ -26,8 +33,8 @@ function Notify(ntype, msg, duration)
         TriggerEvent("ox_lib:notify", {title = TOB.NotifyTitle, description = msg, type = ntype, duration = duration})
     elseif mode == "mythic_notify" then
         exports["mythic_notify"]:SendAlert(ntype == "warning" and "error" or ntype, msg, duration)
-    elseif mode == "esx" then
-        ESX.ShowNotification(msg)
+    elseif mode == "esx" or mode == "framework" then
+        Bridge.Notify(msg)
     else
         BeginTextCommandThefeedPost("STRING")
         AddTextComponentSubstringPlayerName(msg)
@@ -67,163 +74,171 @@ function UseTarget()
 end
 
 function IsPoliceJob()
-    return PlayerData ~= nil and PlayerData.job ~= nil and PlayerData.job.name == TOB.PoliceJob
+    return Bridge.IsPolice()
 end
 
-PlayerData = nil
-Check = {B1 = false}
-LootCheck = {
-    B1 = {Stop = false, Loot1 = false, Loot2 = false, Loot3 = false}
-}
-Doors = {}
-LootActive = {}
-local disableinput = false
-local initiator = false
-local startdstcheck = false
-local currentname = nil
-local currentcoords = nil
-local dooruse = false
-
-Citizen.CreateThread(function() while true do local enabled = false Citizen.Wait(1) if disableinput then enabled = true DisableControl() end if not enabled then Citizen.Wait(500) end end end)
 function DrawText3D(x, y, z, text, scale) local onScreen, _x, _y = World3dToScreen2d(x, y, z) SetTextScale(scale, scale) SetTextFont(4) SetTextProportional(1) SetTextEntry("STRING") SetTextCentre(true) SetTextColour(255, 255, 255, 215) AddTextComponentString(text) DrawText(_x, _y) local factor = (string.len(text)) / 700 DrawRect(_x, _y + 0.0150, 0.095 + factor, 0.03, 41, 11, 41, 100) end
 function DisableControl() DisableControlAction(0, 73, false) DisableControlAction(0, 24, true) DisableControlAction(0, 257, true) DisableControlAction(0, 25, true) DisableControlAction(0, 263, true) DisableControlAction(0, 32, true) DisableControlAction(0, 34, true) DisableControlAction(0, 31, true) DisableControlAction(0, 30, true) DisableControlAction(0, 45, true) DisableControlAction(0, 22, true) DisableControlAction(0, 44, true) DisableControlAction(0, 37, true) DisableControlAction(0, 23, true) DisableControlAction(0, 288, true) DisableControlAction(0, 289, true) DisableControlAction(0, 170, true) DisableControlAction(0, 167, true) DisableControlAction(0, 73, true) DisableControlAction(2, 199, true) DisableControlAction(0, 47, true) DisableControlAction(0, 264, true) DisableControlAction(0, 257, true) DisableControlAction(0, 140, true) DisableControlAction(0, 141, true) DisableControlAction(0, 142, true) DisableControlAction(0, 143, true) end
-function ShowTimer() SetTextFont(0) SetTextProportional(0) SetTextScale(0.42, 0.42) SetTextDropShadow(0, 0, 0, 0,255) SetTextEdge(1, 0, 0, 0, 255) SetTextEntry("STRING") AddTextComponentString("~r~"..TOB.timer.."~w~") DrawText(0.682, 0.96) end
+function ShowTimer() SetTextFont(0) SetTextProportional(0) SetTextScale(0.42, 0.42) SetTextDropShadow(0, 0, 0, 0,255) SetTextEdge(1, 0, 0, 0, 255) SetTextEntry("STRING") AddTextComponentString("~r~"..timerLeft.."~w~") DrawText(0.682, 0.96) end
 
-RegisterNetEvent("esx:setJob")
-AddEventHandler("esx:setJob", function(job)
-    PlayerData.job = job
-end)
+local function StartVec(bank)
+    local s = TOB.Banks[bank].doors.startloc
+    return vector3(s.x, s.y, s.z)
+end
 
-RegisterNetEvent("esx:playerLoaded")
-AddEventHandler("esx:playerLoaded", function(xPlayer)
-    PlayerData = xPlayer
+local function GateModel(bank)
+    return GetHashKey(TOB.Banks[bank].gateModel or TOB.door)
+end
+
+local function VaultModel(bank)
+    return GetHashKey(TOB.Banks[bank].vaultModel or TOB.vaultdoor)
+end
+
+local function GetVaultObject(bank)
+    local s = StartVec(bank)
+    return GetClosestObjectOfType(s.x, s.y, s.z, 2.0, VaultModel(bank), false, false, false)
+end
+
+Citizen.CreateThread(function()
+    while true do
+        if disableinput then
+            DisableControl()
+            Citizen.Wait(0)
+        else
+            Citizen.Wait(500)
+        end
+    end
 end)
 
 RegisterNetEvent("TOB_fh:lootup_c")
-AddEventHandler("TOB_fh:lootup_c", function(var, var2)
-    LootCheck[var][var2] = true
+AddEventHandler("TOB_fh:lootup_c", function(bank, loot)
+    if LootCheck[bank] ~= nil then
+        LootCheck[bank][loot] = true
+    end
 end)
 
 RegisterNetEvent("TOB_fh:outcome")
-AddEventHandler("TOB_fh:outcome", function(oc, arg)
-    for i = 1, #Check, 1 do
-        Check[i] = false
-    end
-    for i = 1, #LootCheck, 1 do
-        for j = 1, #LootCheck[i] do
-            LootCheck[i][j] = false
-        end
-    end
-    if oc then
+AddEventHandler("TOB_fh:outcome", function(ok, arg)
+    if ok then
         Check[arg] = true
-        TriggerEvent("TOB_fh:startheist", TOB.Banks[arg], arg)
-    elseif not oc then
+        StartHeist(arg)
+    else
         Notify("error", arg)
     end
 end)
 
 RegisterNetEvent("TOB_fh:startLoot_c")
 AddEventHandler("TOB_fh:startLoot_c", function(data, name)
-    currentname = name
-    currentcoords = vector3(data.doors.startloc.x, data.doors.startloc.y, data.doors.startloc.z)
     -- Fresh loot state for every heist, so a second heist can be looted too
     LootCheck[name] = {Stop = false, Loot1 = false, Loot2 = false, Loot3 = false}
     LootActive[name] = true
-    if not LootCheck[name].Stop then
-        Citizen.CreateThread(function()
-            local useTarget = UseTarget()
+    Citizen.CreateThread(function()
+        local useTarget = UseTarget()
+        local start = vector3(data.doors.startloc.x, data.doors.startloc.y, data.doors.startloc.z)
 
-            while true do
-                local pedcoords = GetEntityCoords(PlayerPedId())
-                local dst = GetDistanceBetweenCoords(pedcoords, data.doors.startloc.x, data.doors.startloc.y, data.doors.startloc.z, true)
+        while true do
+            local pedcoords = GetEntityCoords(PlayerPedId())
 
-                if dst < 40 then
-                    local sleep = 250
+            if #(pedcoords - start) < 40 then
+                local sleep = 250
 
-                    if not LootCheck[name].Loot1 then
-                        local dst1 = GetDistanceBetweenCoords(pedcoords, data.trolley1.x, data.trolley1.y, data.trolley1.z + 1, true)
+                for i = 1, 3 do
+                    local loot = "Loot" .. i
+                    local t = data["trolley" .. i]
 
-                        if dst1 < 5 and not useTarget and not IsPoliceJob() then
-                            sleep = 0
-                            DrawText3D(data.trolley1.x, data.trolley1.y, data.trolley1.z+1, "[~r~E~w~] " .. L("loot"), 0.40)
-                            if dst1 < 0.75 and IsControlJustReleased(0, 38) then
-                                TriggerServerEvent("TOB_fh:lootup", name, "Loot1")
-                                StartGrab(name, vector3(data.trolley1.x, data.trolley1.y, data.trolley1.z))
-                            end
-                        end
-                    end
-
-                    if not LootCheck[name].Loot2 then
-                        local dst1 = GetDistanceBetweenCoords(pedcoords, data.trolley2.x, data.trolley2.y, data.trolley2.z+1, true)
+                    if not LootCheck[name][loot] then
+                        local dst1 = #(pedcoords - vector3(t.x, t.y, t.z + 1))
 
                         if dst1 < 5 and not useTarget and not IsPoliceJob() then
                             sleep = 0
-                            DrawText3D(data.trolley2.x, data.trolley2.y, data.trolley2.z+1, "[~r~E~w~] " .. L("loot"), 0.40)
+                            DrawText3D(t.x, t.y, t.z + 1, "[~r~E~w~] " .. L("loot"), 0.40)
                             if dst1 < 1 and IsControlJustReleased(0, 38) then
-                                TriggerServerEvent("TOB_fh:lootup", name, "Loot2")
-                                StartGrab(name, vector3(data.trolley2.x, data.trolley2.y, data.trolley2.z))
+                                TriggerServerEvent("TOB_fh:lootup", name, loot)
+                                StartGrab(name, vector3(t.x, t.y, t.z))
                             end
                         end
                     end
-
-                    if not LootCheck[name].Loot3 then
-                        local dst1 = GetDistanceBetweenCoords(pedcoords, data.trolley3.x, data.trolley3.y, data.trolley3.z+1, true)
-
-                        if dst1 < 5 and not useTarget and not IsPoliceJob() then
-                            sleep = 0
-                            DrawText3D(data.trolley3.x, data.trolley3.y, data.trolley3.z+1, "[~r~E~w~] " .. L("loot"), 0.40)
-                            if dst1 < 1 and IsControlJustReleased(0, 38) then
-                                TriggerServerEvent("TOB_fh:lootup", name, "Loot3")
-                                StartGrab(name, vector3(data.trolley3.x, data.trolley3.y, data.trolley3.z))
-                            end
-                        end
-                    end
-
-                    if LootCheck[name].Stop or (LootCheck[name].Loot1 and LootCheck[name].Loot2 and LootCheck[name].Loot3) then
-                        LootCheck[name].Stop = false
-                        LootActive[name] = false
-                        if initiator then
-                            TriggerEvent("TOB_fh:reset", name, data)
-                            return
-                        end
-                        return
-                    end
-                    Citizen.Wait(sleep)
-                else
-                    Citizen.Wait(1000)
                 end
+
+                local lc = LootCheck[name]
+                if lc.Stop or (lc.Loot1 and lc.Loot2 and lc.Loot3) then
+                    lc.Stop = false
+                    LootActive[name] = false
+                    if initiator and currentname == name then
+                        TriggerEvent("TOB_fh:reset", name, data)
+                    end
+                    return
+                end
+                Citizen.Wait(sleep)
+            else
+                if LootCheck[name].Stop then
+                    LootActive[name] = false
+                    return
+                end
+                Citizen.Wait(1000)
             end
-        end)
-    end
+        end
+    end)
 end)
 
 RegisterNetEvent("TOB_fh:stopHeist_c")
 AddEventHandler("TOB_fh:stopHeist_c", function(name)
-    LootCheck[name].Stop = true
+    if LootCheck[name] ~= nil then
+        LootCheck[name].Stop = true
+    end
 end)
 
 RegisterNetEvent("TOB_fh:policenotify")
 AddEventHandler("TOB_fh:policenotify", function(name)
-    local blip = nil
-
     if TOB.BuiltInPoliceAlert and IsPoliceJob() then
-        Notify("warning", L("police_alert"), 10000)
-        if not DoesBlipExist(blip) then
-            blip = AddBlipForCoord(TOB.Banks[name].doors.startloc.x, TOB.Banks[name].doors.startloc.y, TOB.Banks[name].doors.startloc.z)
-            SetBlipSprite(blip, 161)
-            SetBlipScale(blip, 2.0)
-            SetBlipColour(blip, 1)
+        local s = StartVec(name)
 
-            PulseBlip(blip)
-            Citizen.Wait(240000)
-            RemoveBlip(blip)
+        Notify("warning", L("police_alert"), 10000)
+        local blip = AddBlipForCoord(s.x, s.y, s.z)
+        SetBlipSprite(blip, 161)
+        SetBlipScale(blip, 2.0)
+        SetBlipColour(blip, 1)
+        PulseBlip(blip)
+        Citizen.Wait(240000)
+        RemoveBlip(blip)
+    end
+end)
+
+-- Admin reset (TOB.ResetCommand): stop everything for this bank and remove the props
+RegisterNetEvent("TOB_fh:forceReset")
+AddEventHandler("TOB_fh:forceReset", function(name)
+    if LootCheck[name] ~= nil then
+        LootCheck[name].Stop = true
+    end
+    LootActive[name] = false
+    AwaitingVault[name] = nil
+    Check[name] = false
+    if currentname == name then
+        initiator = false
+        startdstcheck = false
+        disableinput = false
+        if IdProp ~= nil and DoesEntityExist(IdProp) then
+            DeleteEntity(IdProp)
+        end
+    end
+    local b = TOB.Banks[name]
+    for i = 1, 3 do
+        local t = b["trolley" .. i]
+        for _, model in ipairs({"hei_prop_hei_cash_trolly_01", "hei_prop_hei_cash_trolly_03"}) do
+            local obj = GetClosestObjectOfType(t.x, t.y, t.z, 1.5, GetHashKey(model), false, false, false)
+            if obj ~= 0 then
+                NetworkRequestControlOfEntity(obj)
+                SetEntityAsMissionEntity(obj, true, true)
+                DeleteEntity(obj)
+            end
         end
     end
 end)
 
--- MAIN DOOR UPDATE --
+-- DOORS --
 
-AddEventHandler("TOB_fh:freezeDoors", function()
+local function DoorThreads()
+    -- Keeps the gate frozen (locked) and at the right angle while players are near
     Citizen.CreateThread(function()
         while true do
             local near = false
@@ -233,21 +248,19 @@ AddEventHandler("TOB_fh:freezeDoors", function()
                 if #(pcoords - v[1].loc) < 60.0 then
                     near = true
                     if v[1].obj == nil or not DoesEntityExist(v[1].obj) then
-                        v[1].obj = GetClosestObjectOfType(v[1].loc, 1.5, GetHashKey("v_ilev_gb_vaubar"), false, false, false)
-                        FreezeEntityPosition(v[1].obj, v[1].locked)
-                    else
-                        FreezeEntityPosition(v[1].obj, v[1].locked)
-                        Citizen.Wait(100)
+                        v[1].obj = GetClosestObjectOfType(v[1].loc, 1.5, GateModel(k), false, false, false)
                     end
+                    FreezeEntityPosition(v[1].obj, v[1].locked)
                     if v[1].locked then
                         SetEntityHeading(v[1].obj, v[1].h)
                     end
-                    Citizen.Wait(100)
                 end
             end
-            Citizen.Wait(near and 1 or 2000)
+            Citizen.Wait(near and 200 or 2000)
         end
     end)
+
+    -- "Press E" prompts for police at the gate and the vault
     Citizen.CreateThread(function()
         local useTarget = UseTarget()
 
@@ -258,7 +271,7 @@ AddEventHandler("TOB_fh:freezeDoors", function()
                 local pcoords = GetEntityCoords(PlayerPedId())
 
                 for k, v in pairs(Doors) do
-                    for i = 1, 2, 1 do
+                    for i = 1, 2 do
                         local dst = #(pcoords - v[i].loc)
 
                         if dst <= 5.0 then
@@ -267,11 +280,8 @@ AddEventHandler("TOB_fh:freezeDoors", function()
                             sleep = 250
                         end
                         if dst <= 4.0 then
-                            if v[i].locked then
-                                DrawText3D(v[i].txtloc[1], v[i].txtloc[2], v[i].txtloc[3], "[~r~E~w~] " .. L("unlock_door"), 0.40)
-                            else
-                                DrawText3D(v[i].txtloc[1], v[i].txtloc[2], v[i].txtloc[3], "[~r~E~w~] " .. L("lock_door"), 0.40)
-                            end
+                            local label = v[i].locked and L("unlock_door") or L("lock_door")
+                            DrawText3D(v[i].txtloc.x, v[i].txtloc.y, v[i].txtloc.z, "[~r~E~w~] " .. label, 0.40)
                             if dst <= 1.5 and IsControlJustReleased(0, 38) then
                                 ToggleDoor(k, i)
                             end
@@ -282,50 +292,53 @@ AddEventHandler("TOB_fh:freezeDoors", function()
             Citizen.Wait(sleep)
         end
     end)
-    Citizen.CreateThread(function()
-        doVaultStuff = function()
-            while true do
-                local pcoords = GetEntityCoords(PlayerPedId())
 
-                for k, v in pairs(Doors) do
-                    if GetDistanceBetweenCoords(v[2].loc, pcoords, true) <= 20.0 then
-                        if v[2].state ~= nil then
-                            local obj
-                            if k ~= "F4" then
-                                obj = GetClosestObjectOfType(v[2].loc, 1.5, GetHashKey("v_ilev_gb_vauldr"), false, false, false)
-                            else
-                                obj = GetClosestObjectOfType(v[2].loc, 1.5, 4231427725, false, false, false)
-                            end
-                            SetEntityHeading(obj, v[2].state)
-                            Citizen.Wait(1000)
-                            return doVaultStuff()
-                        end
-                    else
-                        Citizen.Wait(1000)
+    -- Keeps the vault door at its last known angle for players who come near later
+    Citizen.CreateThread(function()
+        while true do
+            local sleep = 1000
+            local pcoords = GetEntityCoords(PlayerPedId())
+
+            for k, v in pairs(Doors) do
+                if v[2].state ~= nil and not dooruse and #(pcoords - v[2].loc) <= 20.0 then
+                    local obj = GetVaultObject(k)
+                    if obj ~= 0 then
+                        SetEntityHeading(obj, v[2].state)
                     end
                 end
-                Citizen.Wait(250)
             end
+            Citizen.Wait(sleep)
         end
-        doVaultStuff()
     end)
-end)
+end
+
+function ToggleDoor(k, i)
+    dooruse = true
+    if i == 2 then
+        TriggerServerEvent("TOB_fh:toggleVault", k, not Doors[k][i].locked)
+    else
+        TriggerServerEvent("TOB_fh:toggleDoor", k, not Doors[k][i].locked)
+    end
+end
 
 RegisterNetEvent("TOB_fh:toggleDoor")
 AddEventHandler("TOB_fh:toggleDoor", function(key, state)
-    Doors[key][1].locked = state
+    if Doors[key] ~= nil then
+        Doors[key][1].locked = state
+    end
     dooruse = false
 end)
 
 RegisterNetEvent("TOB_fh:toggleVault")
 AddEventHandler("TOB_fh:toggleVault", function(key, state)
-    local start = TOB.Banks[key].doors.startloc
-    local obj = GetClosestObjectOfType(start.x, start.y, start.z, 2.0, GetHashKey(TOB.vaultdoor), false, false, false)
+    if Doors[key] == nil then return end
+    local obj = GetVaultObject(key)
 
     Doors[key][2].locked = state
     -- Only players near the bank have the vault loaded. Everyone else just keeps the state,
     -- and gets the final door angle from the server (TOB_fh:vaultState).
     if obj == 0 then
+        dooruse = false
         return
     end
     dooruse = true
@@ -347,23 +360,35 @@ AddEventHandler("TOB_fh:vaultState", function(key, heading)
     end
 end)
 
+-- HEIST --
+
 AddEventHandler("TOB_fh:reset", function(name, data)
-    for i = 1, #LootCheck[name], 1 do
-        LootCheck[name][i] = false
-    end
     Check[name] = false
     Notify("error", L("vault_closing_soon", TOB.VaultCloseDelay))
     Citizen.Wait(TOB.VaultCloseDelay * 1000)
     Notify("error", L("vault_closing"))
     TriggerServerEvent("TOB_fh:toggleVault", name, true)
-    TriggerEvent("TOB_fh:cleanUp", data, name)
+    CleanUp(data, name)
 end)
 
-AddEventHandler("TOB_fh:startheist", function(data, name)
-    TriggerServerEvent("TOB_fh:toggleDoor", name, true) -- ensure to lock the second door for the second, third, fourth... heist
+local function FailHeist(name, reason)
+    Notify("error", L(reason))
+    Check[name] = false
+    initiator = false
+    AwaitingVault[name] = nil
+    if IdProp ~= nil and DoesEntityExist(IdProp) then
+        DeleteEntity(IdProp)
+    end
+    TriggerServerEvent("TOB_fh:setCooldown", name, reason)
+end
+
+function StartHeist(name)
+    local data = TOB.Banks[name]
+
+    TriggerServerEvent("TOB_fh:toggleDoor", name, true) -- make sure the gate is locked for this heist
     disableinput = true
     currentname = name
-    currentcoords = vector3(data.doors.startloc.x, data.doors.startloc.y, data.doors.startloc.z)
+    currentcoords = StartVec(name)
     initiator = true
     -- Server owners' dispatch integration (TOB.lua). pcall so a broken hook can't stop the heist.
     local ok, err = pcall(TOB.DispatchAlert, currentcoords)
@@ -378,11 +403,8 @@ AddEventHandler("TOB_fh:startheist", function(data, name)
 
     SetEntityCoords(ped, data.doors.startloc.animcoords.x, data.doors.startloc.animcoords.y, data.doors.startloc.animcoords.z)
     SetEntityHeading(ped, data.doors.startloc.animcoords.h)
-    local pedco = GetEntityCoords(PlayerPedId())
-    IdProp = CreateObject(GetHashKey("p_ld_id_card_01"), pedco, 1, 1, 0)
-    local boneIndex = GetPedBoneIndex(PlayerPedId(), 28422)
-
-    AttachEntityToEntity(IdProp, ped, boneIndex, 0.20, 0.038, 0.001, 10.0, 175.0, 0.0, true, true, false, true, 1, true)
+    IdProp = CreateObject(GetHashKey("p_ld_id_card_01"), GetEntityCoords(ped), 1, 1, 0)
+    AttachEntityToEntity(IdProp, ped, GetPedBoneIndex(ped, 28422), 0.20, 0.038, 0.001, 10.0, 175.0, 0.0, true, true, false, true, 1, true)
     TaskStartScenarioInPlace(ped, "PROP_HUMAN_ATM", 0, true)
     Citizen.CreateThread(function() Progress(2000, L("using_card")) end)
     Citizen.Wait(1500)
@@ -395,51 +417,81 @@ AddEventHandler("TOB_fh:startheist", function(data, name)
     disableinput = false
     Citizen.Wait(1000)
     if not Minigame() then
-        Notify("error", L("hack_failed"))
-        Check[name] = false
-        initiator = false
-        if DoesEntityExist(IdProp) then
-            DeleteEntity(IdProp)
-        end
-        TriggerServerEvent("TOB_fh:setCooldown", name)
+        FailHeist(name, "hack_failed")
         return
     end
-    Process(TOB.hacktime, L("hacking"))
+    Progress(TOB.hacktime, L("hacking"))
     Notify("success", L("hack_done"))
     PlaySoundFrontend(-1, "ATM_WINDOW", "HUD_FRONTEND_DEFAULT_SOUNDSET")
+
+    if TOB.VaultItem ~= nil and TOB.VaultItem ~= "" then
+        WaitForVaultItem(name)
+    else
+        OpenVault(name)
+    end
+end
+
+function OpenVault(name)
     TriggerServerEvent("TOB_fh:toggleVault", name, false)
     startdstcheck = true
-    currentname = name
+    timerLeft = TOB.timer
     Notify("error", L("security_timer", string.format("%d:%02d", math.floor(TOB.timer / 60), TOB.timer % 60)))
-    SpawnTrolleys(data, name)
+    SpawnTrolleys(TOB.Banks[name], name)
+end
+
+-- Extra vault step (TOB.VaultItem): the robber has TOB.timer seconds to use the item on the vault door
+function WaitForVaultItem(name)
+    AwaitingVault[name] = true
+    Notify("inform", L("use_vault_item", TOB.VaultItemLabel), 10000)
+    Citizen.CreateThread(function()
+        local deadline = GetGameTimer() + TOB.timer * 1000
+
+        while AwaitingVault[name] do
+            if GetGameTimer() > deadline or #(GetEntityCoords(PlayerPedId()) - currentcoords) > 30.0 then
+                FailHeist(name, "vault_timeout")
+                return
+            end
+            Citizen.Wait(500)
+        end
+    end)
+end
+
+function UseVaultItem(name)
+    if not AwaitingVault[name] then return end
+    TriggerServerEvent("TOB_fh:useVaultItem", name)
+end
+
+RegisterNetEvent("TOB_fh:vaultItemResult")
+AddEventHandler("TOB_fh:vaultItemResult", function(name, ok)
+    if not ok then
+        Notify("error", L("no_vault_item", TOB.VaultItemLabel))
+        return
+    end
+    AwaitingVault[name] = nil
+    local ped = PlayerPedId()
+
+    TaskStartScenarioInPlace(ped, "WORLD_HUMAN_WELDING", 0, true)
+    Progress(TOB.VaultItemTime, L("using_vault_item"))
+    ClearPedTasks(ped)
+    OpenVault(name)
 end)
 
-AddEventHandler("TOB_fh:cleanUp", function(data, name)
+function CleanUp(data, name)
     Citizen.Wait(10000)
-    for i = 1, 3, 1 do -- full trolley clean
-        local obj = GetClosestObjectOfType(data.objects[i].x, data.objects[i].y, data.objects[i].z, 0.75, GetHashKey("hei_prop_hei_cash_trolly_01"), false, false, false)
+    for i = 1, 3, 1 do
+        for _, model in ipairs({"hei_prop_hei_cash_trolly_01", "hei_prop_hei_cash_trolly_03"}) do
+            local obj = GetClosestObjectOfType(data.objects[i].x, data.objects[i].y, data.objects[i].z, 0.75, GetHashKey(model), false, false, false)
 
-        if DoesEntityExist(obj) then
-            DeleteEntity(obj)
+            if DoesEntityExist(obj) then
+                DeleteEntity(obj)
+            end
         end
     end
-    for j = 1, 3, 1 do -- empty trolley clean
-        local obj = GetClosestObjectOfType(data.objects[j].x, data.objects[j].y, data.objects[j].z, 0.75, GetHashKey("hei_prop_hei_cash_trolly_03"), false, false, false)
-
-        if DoesEntityExist(obj) then
-            DeleteEntity(obj)
-        end
-    end
-    if DoesEntityExist(IdProp) then
+    if IdProp ~= nil and DoesEntityExist(IdProp) then
         DeleteEntity(IdProp)
     end
     TriggerServerEvent("TOB_fh:setCooldown", name)
     initiator = false
-end)
-
-
-function Process(ms, text)
-    Progress(ms, text)
 end
 
 function SpawnTrolleys(data, name)
@@ -447,18 +499,14 @@ function SpawnTrolleys(data, name)
     while not HasModelLoaded("hei_prop_hei_cash_trolly_01") do
         Citizen.Wait(1)
     end
-    Trolley1 = CreateObject(GetHashKey("hei_prop_hei_cash_trolly_01"), data.trolley1.x, data.trolley1.y, data.trolley1.z, 1, 1, 0)
-    Trolley2 = CreateObject(GetHashKey("hei_prop_hei_cash_trolly_01"), data.trolley2.x, data.trolley2.y, data.trolley2.z, 1, 1, 0)
-    Trolley3 = CreateObject(GetHashKey("hei_prop_hei_cash_trolly_01"), data.trolley3.x, data.trolley3.y, data.trolley3.z, 1, 1, 0)
-    local h1 = GetEntityHeading(Trolley1)
-    local h2 = GetEntityHeading(Trolley2)
-    local h3 = GetEntityHeading(Trolley3)
+    for i = 1, 3 do
+        local t = data["trolley" .. i]
+        local trolley = CreateObject(GetHashKey("hei_prop_hei_cash_trolly_01"), t.x, t.y, t.z, 1, 1, 0)
 
-    SetEntityHeading(Trolley1, h1 + TOB.Banks[name].trolley1.h)
-    SetEntityHeading(Trolley2, h2 + TOB.Banks[name].trolley2.h)
-    SetEntityHeading(Trolley3, h3 + TOB.Banks[name].trolley3.h)
+        SetEntityHeading(trolley, GetEntityHeading(trolley) + t.h)
+    end
     -- The server decides who can loot (everyone near the bank)
-    TriggerServerEvent("TOB_fh:startLoot", data, name)
+    TriggerServerEvent("TOB_fh:startLoot", nil, name)
 end
 
 function StartGrab(name, trolleyCoords)
@@ -559,6 +607,7 @@ function StartGrab(name, trolleyCoords)
     disableinput = false
 end
 
+-- Ends the heist if the robber leaves the bank
 Citizen.CreateThread(function()
     while true do
         if startdstcheck and initiator then
@@ -572,27 +621,18 @@ Citizen.CreateThread(function()
     end
 end)
 
-
+-- Security timer: ends the heist when it runs out
 Citizen.CreateThread(function()
-    local resettimer = TOB.timer
-
     while true do
-        if startdstcheck then
-            if initiator then
-                if TOB.timer > 0 then
-                    Citizen.Wait(1000)
-                    TOB.timer = TOB.timer - 1
-                elseif TOB.timer == 0 then
-                    startdstcheck = false
-                    TriggerServerEvent("TOB_fh:stopHeist", currentname)
-                    TOB.timer = resettimer
-                end
+        if startdstcheck and initiator then
+            if timerLeft > 0 then
+                timerLeft = timerLeft - 1
+            else
+                startdstcheck = false
+                TriggerServerEvent("TOB_fh:stopHeist", currentname)
             end
-            Citizen.Wait(1)
-        else
-            Citizen.Wait(1000)
         end
-        Citizen.Wait(1)
+        Citizen.Wait(1000)
     end
 end)
 
@@ -607,25 +647,29 @@ Citizen.CreateThread(function()
     end
 end)
 
-Citizen.CreateThread(function()
-    while ESX == nil do
-        Citizen.Wait(100)
-    end
-    while ESX.GetPlayerData().job == nil do
-        Citizen.Wait(100)
-    end
-    PlayerData = ESX.GetPlayerData()
-    while PlayerData == nil do
-        Citizen.Wait(100)
-    end
-    ESX.TriggerServerCallback("TOB_fh:getBanks", function(bank, door)
-        TOB.Banks = bank
-        Doors = door
+-- STARTUP --
+
+Bridge.Init(function()
+    Bridge.TriggerCallback("TOB_fh:getBanks", function(banks, doors)
+        TOB.Banks = banks
+        Doors = doors
+        for k, _ in pairs(TOB.Banks) do
+            Check[k] = false
+            LootCheck[k] = {Stop = false, Loot1 = false, Loot2 = false, Loot3 = false}
+        end
         if UseTarget() then
             RegisterTargets()
         end
+        DoorThreads()
+        ready = true
     end)
-    TriggerEvent("TOB_fh:freezeDoors")
+end)
+
+-- "Press E" prompts for robbers: start the heist and use the vault item
+Citizen.CreateThread(function()
+    while not ready do
+        Citizen.Wait(500)
+    end
     local useTarget = UseTarget()
 
     while true do
@@ -635,18 +679,29 @@ Citizen.CreateThread(function()
             local coords = GetEntityCoords(PlayerPedId())
 
             for k, v in pairs(TOB.Banks) do
-                if not v.onaction then
-                    local dst = #(coords - vector3(v.doors.startloc.x, v.doors.startloc.y, v.doors.startloc.z))
+                local s = v.doors.startloc
+                local dst = #(coords - vector3(s.x, s.y, s.z))
 
-                    if dst <= 6 then
-                        sleep = 0
-                    elseif dst <= 30 and sleep > 250 then
-                        sleep = 250
+                if dst <= 6 then
+                    sleep = 0
+                elseif dst <= 30 and sleep > 250 then
+                    sleep = 250
+                end
+                if not v.onaction and dst <= 5 and not Check[k] then
+                    DrawText3D(s.x, s.y, s.z, "[~r~E~w~] " .. L("start_heist"), 0.40)
+                    if dst <= 1 and IsControlJustReleased(0, 38) then
+                        TriggerServerEvent("TOB_fh:startcheck", k)
                     end
-                    if dst <= 5 and not Check[k] then
-                        DrawText3D(v.doors.startloc.x, v.doors.startloc.y, v.doors.startloc.z, "[~r~E~w~] " .. L("start_heist"), 0.40)
-                        if dst <= 1 and IsControlJustReleased(0, 38) then
-                            TriggerServerEvent("TOB_fh:startcheck", k)
+                end
+                if AwaitingVault[k] then
+                    local vt = Doors[k][2].txtloc
+                    local vdst = #(coords - vt)
+
+                    if vdst <= 5 then
+                        sleep = 0
+                        DrawText3D(vt.x, vt.y, vt.z, "[~r~E~w~] " .. L("use_item", TOB.VaultItemLabel), 0.40)
+                        if vdst <= 1.5 and IsControlJustReleased(0, 38) then
+                            UseVaultItem(k)
                         end
                     end
                 end
@@ -655,15 +710,6 @@ Citizen.CreateThread(function()
         Citizen.Wait(sleep)
     end
 end)
-
-function ToggleDoor(k, i)
-    dooruse = true
-    if i == 2 then
-        TriggerServerEvent("TOB_fh:toggleVault", k, not Doors[k][i].locked)
-    else
-        TriggerServerEvent("TOB_fh:toggleDoor", k, not Doors[k][i].locked)
-    end
-end
 
 -- ox_target zones, used instead of "press E" prompts when TOB.Target allows it
 function RegisterTargets()
@@ -713,32 +759,41 @@ function RegisterTargets()
 
     for k, v in pairs(Doors) do
         for i = 1, 2 do
-            exports.ox_target:addSphereZone({
-                coords = v[i].txtloc,
-                radius = 1.0,
-                options = {
-                    {
-                        name = "tob_unlock_" .. k .. "_" .. i,
-                        icon = "fa-solid fa-lock-open",
-                        label = L("unlock_door"),
-                        distance = 2.0,
-                        canInteract = function()
-                            return IsPoliceJob() and not dooruse and Doors[k][i].locked
-                        end,
-                        onSelect = function() ToggleDoor(k, i) end
-                    },
-                    {
-                        name = "tob_lock_" .. k .. "_" .. i,
-                        icon = "fa-solid fa-lock",
-                        label = L("lock_door"),
-                        distance = 2.0,
-                        canInteract = function()
-                            return IsPoliceJob() and not dooruse and not Doors[k][i].locked
-                        end,
-                        onSelect = function() ToggleDoor(k, i) end
-                    }
+            local options = {
+                {
+                    name = "tob_unlock_" .. k .. "_" .. i,
+                    icon = "fa-solid fa-lock-open",
+                    label = L("unlock_door"),
+                    distance = 2.0,
+                    canInteract = function()
+                        return IsPoliceJob() and not dooruse and Doors[k][i].locked
+                    end,
+                    onSelect = function() ToggleDoor(k, i) end
+                },
+                {
+                    name = "tob_lock_" .. k .. "_" .. i,
+                    icon = "fa-solid fa-lock",
+                    label = L("lock_door"),
+                    distance = 2.0,
+                    canInteract = function()
+                        return IsPoliceJob() and not dooruse and not Doors[k][i].locked
+                    end,
+                    onSelect = function() ToggleDoor(k, i) end
                 }
-            })
+            }
+            if i == 2 then
+                options[#options + 1] = {
+                    name = "tob_vaultitem_" .. k,
+                    icon = "fa-solid fa-fire",
+                    label = L("use_item", TOB.VaultItemLabel),
+                    distance = 2.0,
+                    canInteract = function()
+                        return AwaitingVault[k] == true
+                    end,
+                    onSelect = function() UseVaultItem(k) end
+                }
+            end
+            exports.ox_target:addSphereZone({coords = v[i].txtloc, radius = 1.0, options = options})
         end
     end
 end

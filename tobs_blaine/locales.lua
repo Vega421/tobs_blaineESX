@@ -16,6 +16,11 @@ Locales = {
         no_card = "You don't have a malicious access card.",
         busy = "This bank is currently being robbed.",
         cooldown = "This bank was robbed recently. You need to wait %s.",
+        use_item = "Use %s",
+        use_vault_item = "Use %s on the vault door to open it.",
+        using_vault_item = "Opening the vault...",
+        no_vault_item = "You need %s to open the vault.",
+        vault_timeout = "You took too long to open the vault. The heist failed.",
     },
     da = {
         start_heist = "Start bankrøveri",
@@ -34,6 +39,11 @@ Locales = {
         no_card = "Du har ikke et idkort.",
         busy = "Der er et røveri i gang i banken.",
         cooldown = "Denne bank er for nylig blevet røvet. Du skal vente %s.",
+        use_item = "Brug %s",
+        use_vault_item = "Brug %s på bankboksens dør for at åbne den.",
+        using_vault_item = "Åbner bankboksen...",
+        no_vault_item = "Du skal bruge %s for at åbne bankboksen.",
+        vault_timeout = "Du var for længe om at åbne bankboksen. Røveriet mislykkedes.",
     },
 }
 
