@@ -3,7 +3,8 @@ game "gta5"
 
 author "Vega"
 description "Paleto Bay bank heist for ESX"
-version "1.1.0"
+version "1.2.0"
 
-client_scripts {"TOB.lua", "client.lua"}
-server_scripts {"TOB.lua", "server.lua"}
+shared_scripts {"TOB.lua", "locales.lua"}
+client_script "client.lua"
+server_script "server.lua"

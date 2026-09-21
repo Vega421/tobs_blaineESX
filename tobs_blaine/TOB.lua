@@ -1,15 +1,44 @@
 TOB = {}
-TOB.timer = 300 -- seconds before the doors lock again
-TOB.hacktime = 1000 -- hack duration in milliseconds (1000 = 1 second). Raise it (e.g. 150000 = 2.5 min) to give police time to arrive
-TOB.maxcash = 6500 -- maximum cash per cash pile (a trolley has many piles)
-TOB.mincash = 3000 -- minimum cash per cash pile
-TOB.black = false -- true pays into the black_money account instead of cash
+
+-- Language: "en" (English) or "da" (Danish). Texts are in locales.lua.
+TOB.Locale = "en"
+
+-- Heist
+TOB.mincops = 4 -- police needed online to start the heist
 TOB.PoliceJob = "police" -- ESX job that counts as police
+TOB.hacktime = 60000 -- hack duration in milliseconds (60000 = 1 min). Gives police time to arrive
+TOB.timer = 300 -- seconds after the hack before the doors lock again
+TOB.VaultCloseDelay = 30 -- seconds between the last trolley being looted and the vault closing
+TOB.cooldown = 600 -- seconds before the bank can be robbed again (600 = 10 min)
+
+-- Hacking minigame (ox_lib skill check). Failing it ends the heist; police are already alerted.
+TOB.Minigame = true -- needs ox_lib; skipped automatically if ox_lib isn't running
+TOB.MinigameDifficulty = {"easy", "easy", "medium", "medium"} -- one entry per round: "easy", "medium" or "hard"
+TOB.MinigameKeys = {"w", "a", "s", "d"} -- keys the skill check can ask for
+
+-- Rewards
+TOB.mincash = 3000 -- minimum cash per cash pile (a trolley has many piles)
+TOB.maxcash = 6500 -- maximum cash per cash pile
+TOB.black = false -- true pays into the black_money account instead of cash
+TOB.MaxPiles = 60 -- anti-cheat: most cash piles one player can be paid for per trolley
+
+-- Interaction and UI
+TOB.Target = "auto" -- "auto" (ox_target if running, otherwise press E), "ox_target" or "none" (always press E)
+TOB.Progress = "auto" -- "auto" (ox_lib if running, otherwise progressBars), "ox_lib" or "progressBars"
 TOB.Notify = "auto" -- "auto", "ox_lib", "mythic_notify", "esx" or "native". "auto" uses ox_lib, then mythic_notify, then ESX notifications
 TOB.NotifyTitle = "Paleto Bank" -- title shown on ox_lib notifications
-TOB.MaxPiles = 60 -- anti-cheat: most cash piles one player can be paid for per trolley
-TOB.cooldown = 600 -- seconds before the bank can be robbed again (600 = 10 min)
-TOB.mincops = 4 -- police needed online to start the heist
+
+-- Police alerts
+TOB.BuiltInPoliceAlert = true -- notification + map blip for on-duty police. Set false if your dispatch script handles it
+
+-- Runs on the robber's game when the heist starts. Paste your dispatch script's alert here,
+-- using its own documentation. coords is the bank's position (vector3).
+TOB.DispatchAlert = function(coords)
+    -- Example (replace with your dispatch script's call):
+    -- exports["my_dispatch"]:SendAlert({code = "10-90", message = "Paleto Bank robbery", coords = coords})
+end
+
+-- Map objects (normally no need to change)
 TOB.vaultdoor = "v_ilev_cbankvauldoor01"
 TOB.door = "v_ilev_cbankvaulgate01"
 TOB.office = "v_ilev_gb_teldr"
