@@ -1,9 +1,12 @@
-# Blaine Bank Heists by Vega
+# tobs_blaine (ESX)
 
-Made by Wagle#8257 a edit of utku's flecca bank heists
+Blaine County (Paleto Bay) bank heist by Vega (Wagle#8257), an edit of utku's Fleeca bank heists.
 
-## Installation
+📖 **Full docs:** https://vega421.github.io/script-docs/scripts/tobs-blaine-esx/
 
-Simply drag and drop this folder to you resources directory and give it a start on server.cfg
+## Install
 
-Don't forget to add the items to your database (sql file if you need)
+1. Drag this folder into your `resources` directory.
+2. Run `items.sql` on your database.
+3. Add `ensure tobs_blaine` to `server.cfg` after `es_extended`.
+4. Settings are in `TOB.lua`.

@@ -1,11 +1,14 @@
 TOB = {}
-TOB.timer = 300 -- countdown to secure lock in seconds (time needed to pass to door to be closed back)
-TOB.hacktime = 1000 -- first door open delay to make time for police to arrive and roleplay in miliseconds (I highly recommend to leave it be (2.5 min default))
-TOB.maxcash = 6500 -- maximum amount of cash a pile can hold
-TOB.mincash = 3000 -- minimum amount of cash a pile holds
-TOB.black = false -- enable this if you want blackmoney as a reward
-TOB.cooldown = 600 -- amount of time to do the heist again in seconds (15min)
-TOB.mincops = 4 -- minimum required cops to start mission
+TOB.timer = 300 -- seconds before the doors lock again
+TOB.hacktime = 1000 -- hack duration in milliseconds (1000 = 1 second). Raise it (e.g. 150000 = 2.5 min) to give police time to arrive
+TOB.maxcash = 6500 -- maximum cash per trolley
+TOB.mincash = 3000 -- minimum cash per trolley
+TOB.black = false -- true pays into the black_money account instead of cash
+TOB.PoliceJob = "police" -- ESX job that counts as police
+TOB.Notify = "auto" -- "auto", "ox_lib", "mythic_notify", "esx" or "native". "auto" uses ox_lib, then mythic_notify, then ESX notifications
+TOB.NotifyTitle = "Paleto Bank" -- title shown on ox_lib notifications
+TOB.cooldown = 600 -- seconds before the bank can be robbed again (600 = 10 min)
+TOB.mincops = 4 -- police needed online to start the heist
 TOB.vaultdoor = "v_ilev_cbankvauldoor01"
 TOB.door = "v_ilev_cbankvaulgate01"
 TOB.office = "v_ilev_gb_teldr"

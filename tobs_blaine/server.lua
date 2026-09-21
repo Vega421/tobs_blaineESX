@@ -1,5 +1,11 @@
 ESX = nil
-TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
+-- ESX Legacy uses the export; older ESX versions use the event
+local ok, esxObj = pcall(function() return exports["es_extended"]:getSharedObject() end)
+if ok and esxObj then
+    ESX = esxObj
+else
+    TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
+end
 
 Doors = {
     ["B1"] = {{loc = vector3(-105.15334320068,6472.7075195312,31.626728057861), h = 42.639282226562, txtloc = vector3(-105.34651184082,6472.708984375,31.626726150513), obj = nil, locked = false}, {loc = vector3(-105.84294891357,6475.4428710938,31.62670135498), txtloc = vector3(-105.84294891357,6475.4428710938,31.62670135498), obj = nil, locked = false}},
@@ -14,7 +20,7 @@ AddEventHandler("TOB_fh:startcheck", function(bank)
     for i = 1, #Players, 1 do
         local xPlayer = ESX.GetPlayerFromId(Players[i])
 
-        if xPlayer.job.name == "police" then
+        if xPlayer.job.name == TOB.PoliceJob then
             copcount = copcount + 1
         end
     end

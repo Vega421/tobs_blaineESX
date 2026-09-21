@@ -1,5 +1,39 @@
 ESX = nil
-TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
+-- ESX Legacy uses the export; older ESX versions use the event
+local ok, esxObj = pcall(function() return exports["es_extended"]:getSharedObject() end)
+if ok and esxObj then
+    ESX = esxObj
+else
+    TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
+end
+
+-- Notifications. Pick a system with TOB.Notify in TOB.lua.
+function Notify(ntype, msg, duration)
+    duration = duration or 5000
+    local mode = TOB.Notify
+
+    if mode == "auto" then
+        if GetResourceState("ox_lib") == "started" then
+            mode = "ox_lib"
+        elseif GetResourceState("mythic_notify") == "started" then
+            mode = "mythic_notify"
+        else
+            mode = "esx"
+        end
+    end
+
+    if mode == "ox_lib" then
+        TriggerEvent("ox_lib:notify", {title = TOB.NotifyTitle, description = msg, type = ntype, duration = duration})
+    elseif mode == "mythic_notify" then
+        exports["mythic_notify"]:SendAlert(ntype == "warning" and "error" or ntype, msg, duration)
+    elseif mode == "esx" then
+        ESX.ShowNotification(msg)
+    else
+        BeginTextCommandThefeedPost("STRING")
+        AddTextComponentSubstringPlayerName(msg)
+        EndTextCommandThefeedPostTicker(false, true)
+    end
+end
 
 Freeze = {B1 = 0}
 PlayerData = nil
@@ -103,7 +137,7 @@ AddEventHandler("TOB_fh:outcome", function(oc, arg)
         Check[arg] = true
         TriggerEvent("TOB_fh:startheist", TOB.Banks[arg], arg)
     elseif not oc then
-        exports["mythic_notify"]:SendAlert("error", arg)
+        Notify("error", arg)
     end
 end)
 
@@ -194,8 +228,8 @@ AddEventHandler("TOB_fh:policenotify", function(name)
     while PlayerData.job == nil do
         Citizen.Wait(1)
     end
-    if PlayerData.job.name == "police" then
-        exports["mythic_notify"]:SendAlert("inform", "A bank's alarms are triggered!", 10000, {["background-color"] = "#CD472A", ["color"] = "#ffffff"})
+    if PlayerData.job.name == TOB.PoliceJob then
+        Notify("warning", "A bank's alarms are triggered!", 10000)
         if not DoesBlipExist(blip) then
             blip = AddBlipForCoord(TOB.Banks[name].doors.startloc.x, TOB.Banks[name].doors.startloc.y, TOB.Banks[name].doors.startloc.z)
             SetBlipSprite(blip, 161)
@@ -232,7 +266,7 @@ AddEventHandler("TOB_fh:freezeDoors", function()
     end)
     Citizen.CreateThread(function()
         while true do
-            if PlayerData.job.name == "police" and not dooruse then
+            if PlayerData.job.name == TOB.PoliceJob and not dooruse then
                 local pcoords = GetEntityCoords(PlayerPedId())
 
                 for k, v in pairs(Doors) do
@@ -369,9 +403,9 @@ AddEventHandler("TOB_fh:reset", function(name, data)
         LootCheck[name][i] = false
     end
     Check[name] = false
-    exports["mythic_notify"]:SendAlert("error", "VAULT DOOR WILL CLOSE IN 30 SECONDS!")
+    Notify("error", "VAULT DOOR WILL CLOSE IN 30 SECONDS!")
     Citizen.Wait(30000)
-    exports["mythic_notify"]:SendAlert("error", "VAULT DOOR CLOSING!")
+    Notify("error", "VAULT DOOR CLOSING!")
     TriggerServerEvent("TOB_fh:toggleVault", name, true)
     TriggerEvent("TOB_fh:cleanUp", data, name)
 end)
@@ -407,12 +441,12 @@ AddEventHandler("TOB_fh:startheist", function(data, name)
     disableinput = false
     Citizen.Wait(1000)
     Process(TOB.hacktime, "Hack in Progress")
-    exports["mythic_notify"]:SendAlert("success", "Hacking complete!")
+    Notify("success", "Hacking complete!")
     PlaySoundFrontend(-1, "ATM_WINDOW", "HUD_FRONTEND_DEFAULT_SOUNDSET")
     TriggerServerEvent("TOB_fh:toggleVault", name, false)
     startdstcheck = true
     currentname = name
-    exports["mythic_notify"]:SendAlert("error", "You have 2 minutes until the security system activation.")
+    Notify("error", "You have 2 minutes until the security system activation.")
     SpawnTrolleys(data, name)
 end)
 
@@ -647,7 +681,7 @@ Citizen.CreateThread(function()
     --Citizen.Wait(1000)
     TriggerEvent("TOB_fh:freezeDoors")
     while true do
-        if PlayerData.job.name ~= "police" then
+        if PlayerData.job.name ~= TOB.PoliceJob then
             local coords = GetEntityCoords(PlayerPedId())
 
             for k, v in pairs(TOB.Banks) do
