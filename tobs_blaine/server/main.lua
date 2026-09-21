@@ -1,5 +1,10 @@
 -- tobs_blaine server. Shared by every framework version; framework-specific code is in server/bridge.lua.
 
+-- Banks with enabled = false are removed here, so players never see them
+for bank, b in pairs(TOB.Banks) do
+    if b.enabled == false then TOB.Banks[bank] = nil end
+end
+
 -- Door state for every bank, built from the gate and vault settings in TOB.Banks
 Doors = {}
 for bank, b in pairs(TOB.Banks) do
@@ -17,12 +22,20 @@ local Looted = {}     -- [bank] = {Loot1 = true, ...}
 local Looting = {}    -- [server id] = {bank, started, last, piles}
 local Payouts = {}    -- [bank] = {[server id] = {name, cash, items, piles}}
 local VaultReady = {} -- [bank] = true once TOB.VaultItem has been used
+local GateReady = {}  -- [bank] = true once the robber hacked the inner gate (banks with doors.secondloc)
+local LastHeistEnd = 0 -- os.time() the last heist on any bank ended (TOB.GlobalCooldown)
+local RestartSoon = false -- set when txAdmin announces a restart (SV.BlockBeforeRestart)
 local Trolleys = {Loot1 = "trolley1", Loot2 = "trolley2", Loot3 = "trolley3"}
 local GRAB_WINDOW = 50000 -- ms a player can collect piles after starting a trolley (the animation is about 40 s)
 local MIN_PILE_GAP = 250  -- ms between two piles
 
 local function VaultItemEnabled()
     return TOB.VaultItem ~= nil and TOB.VaultItem ~= ""
+end
+
+local function BankName(bank)
+    local b = TOB.Banks[bank]
+    return b and b.label and ("%s (%s)"):format(b.label, bank) or tostring(bank)
 end
 
 -- DISCORD LOGS --
@@ -99,17 +112,21 @@ local function EndHeist(bank, reason, cooldown)
         lines[#lines + 1] = ("%s: $%d%s from %d piles"):format(p.name, p.cash, items, p.piles)
     end
     if Started[bank] then
-        Log("Heist ended: " .. bank, ("Reason: %s\nDuration: %s\nTotal: $%d\n%s"):format(
+        Log("Heist ended: " .. BankName(bank), ("Reason: %s\nDuration: %s\nTotal: $%d\n%s"):format(
             reason, Duration(os.time() - Started[bank]), total, #lines > 0 and table.concat(lines, "\n") or "Nobody was paid."), 15105570)
     end
 
     TOB.Banks[bank].lastrobbed = cooldown == false and 0 or os.time()
+    if cooldown ~= false and Started[bank] then
+        LastHeistEnd = os.time()
+    end
     TOB.Banks[bank].onaction = false
     Owner[bank] = nil
     Started[bank] = nil
     Looted[bank] = nil
     Payouts[bank] = nil
     VaultReady[bank] = nil
+    GateReady[bank] = nil
     for id, l in pairs(Looting) do
         if l.bank == bank then Looting[id] = nil end
     end
@@ -120,9 +137,31 @@ local function CloseVault(bank)
     TriggerClientEvent("TOB_fh:toggleVault", -1, bank, true)
 end
 
+local function Clock(seconds)
+    return string.format("%d:%02d", math.floor(seconds / 60), math.floor(math.fmod(seconds, 60)))
+end
+
 local function CooldownLeft(bank)
-    local left = TOB.cooldown - (os.time() - TOB.Banks[bank].lastrobbed)
-    return string.format("%d:%02d", math.floor(left / 60), math.floor(math.fmod(left, 60)))
+    return Clock(TOB.cooldown - (os.time() - TOB.Banks[bank].lastrobbed))
+end
+
+local function AnyHeistActive()
+    for _, b in pairs(TOB.Banks) do
+        if b.onaction then return true end
+    end
+    return false
+end
+
+-- Robbers near the start panel (not police). Without OneSync every player counts.
+local function CrewNear(bank)
+    local count = 0
+    for _, id in ipairs(GetPlayers()) do
+        id = tonumber(id)
+        if not Bridge.IsPolice(id) and IsNear(id, TOB.Banks[bank].doors.startloc, TOB.CrewRadius or 15.0) then
+            count = count + 1
+        end
+    end
+    return count
 end
 
 local function GiveReward(src, amount)
@@ -147,8 +186,18 @@ AddEventHandler("TOB_fh:startcheck", function(bank)
         return
     end
 
-    if Bridge.CountPolice() < TOB.mincops then
+    local globalLeft = (TOB.GlobalCooldown or 0) - (os.time() - LastHeistEnd)
+
+    if RestartSoon then
+        TriggerClientEvent("TOB_fh:outcome", _source, false, L("restart_soon"))
+    elseif TOB.OneAtATime and AnyHeistActive() and not TOB.Banks[bank].onaction then
+        TriggerClientEvent("TOB_fh:outcome", _source, false, L("global_busy"))
+    elseif globalLeft > 0 then
+        TriggerClientEvent("TOB_fh:outcome", _source, false, L("global_cooldown", Clock(globalLeft)))
+    elseif Bridge.CountPolice() < TOB.mincops then
         TriggerClientEvent("TOB_fh:outcome", _source, false, L("no_cops"))
+    elseif CrewNear(bank) < (TOB.MinCrew or 1) then
+        TriggerClientEvent("TOB_fh:outcome", _source, false, L("need_crew", TOB.MinCrew))
     elseif not Bridge.HasItem(_source, "id_card_f", 1) then
         TriggerClientEvent("TOB_fh:outcome", _source, false, L("no_card"))
     elseif TOB.Banks[bank].onaction then
@@ -164,7 +213,7 @@ AddEventHandler("TOB_fh:startcheck", function(bank)
         Bridge.RemoveItem(_source, "id_card_f", 1)
         TriggerClientEvent("TOB_fh:outcome", _source, true, bank)
         TriggerClientEvent("TOB_fh:policenotify", -1, bank)
-        Log("Heist started: " .. bank, PlayerLabel(_source) .. " started a heist.", 16740396)
+        Log("Heist started: " .. BankName(bank), PlayerLabel(_source) .. " started a heist.", 16740396)
     end
 end)
 
@@ -184,6 +233,28 @@ AddEventHandler("TOB_fh:useVaultItem", function(bank)
     else
         TriggerClientEvent("TOB_fh:vaultItemResult", _source, bank, false)
     end
+end)
+
+-- Banks with doors.secondloc (Fleeca) have an inner gate the robber hacks after the vault opens
+RegisterServerEvent("TOB_fh:useGate")
+AddEventHandler("TOB_fh:useGate", function(bank)
+    local _source = source
+
+    if not IsHeistOwner(_source, bank) or GateReady[bank] or TOB.Banks[bank].doors.secondloc == nil then return end
+    if not IsNear(_source, TOB.Banks[bank].doors.secondloc, 5.0) then
+        Flag(_source, "Tried to hack the inner gate at " .. BankName(bank) .. " from far away.")
+        return
+    end
+    local item = TOB.GateItem
+    if item ~= nil and item ~= "" then
+        if not Bridge.HasItem(_source, item, 1) then
+            TriggerClientEvent("TOB_fh:gateResult", _source, bank, false)
+            return
+        end
+        Bridge.RemoveItem(_source, item, 1)
+    end
+    GateReady[bank] = true
+    TriggerClientEvent("TOB_fh:gateResult", _source, bank, true)
 end)
 
 RegisterServerEvent("TOB_fh:lootup")
@@ -209,8 +280,14 @@ AddEventHandler("TOB_fh:toggleDoor", function(key, state)
     local _source = source
 
     if Doors[key] == nil then return end
-    if not (Bridge.IsPolice(_source) or IsHeistOwner(_source, key)) then
-        Flag(_source, "Tried to use the gate at " .. tostring(key) .. " without being police or the robber.")
+    local police = Bridge.IsPolice(_source)
+    if not (police or IsHeistOwner(_source, key)) then
+        Flag(_source, "Tried to use the gate at " .. BankName(key) .. " without being police or the robber.")
+        return
+    end
+    -- The robber can only unlock an inner gate after hacking it
+    if not police and state == false and not GateReady[key] then
+        Flag(_source, "Tried to open the inner gate at " .. BankName(key) .. " without hacking it.")
         return
     end
     Doors[key][1].locked = state
@@ -331,6 +408,20 @@ end)
 
 Bridge.RegisterCallback("TOB_fh:getBanks", function(source, cb)
     cb(TOB.Banks, Doors)
+end)
+
+-- RESTART PROTECTION --
+-- txAdmin announces scheduled restarts; block new heists in the last SV.BlockBeforeRestart minutes
+AddEventHandler("txAdmin:events:scheduledRestart", function(data)
+    local minutes = SV.BlockBeforeRestart or 0
+    if minutes > 0 and data and data.secondsRemaining and data.secondsRemaining <= minutes * 60 and not RestartSoon then
+        RestartSoon = true
+        Log("Heists blocked", ("Server restart in %d minutes. New heists are blocked until the restart."):format(math.ceil(data.secondsRemaining / 60)), 9807270)
+    end
+end)
+
+AddEventHandler("txAdmin:events:scheduledRestartSkipped", function()
+    RestartSoon = false
 end)
 
 -- ADMIN RESET --

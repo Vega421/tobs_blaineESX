@@ -10,5 +10,9 @@ SV.LogAntiCheat = true -- also log blocked cheat attempts (max once a minute per
 --   add_ace group.admin command.tobreset allow
 SV.ResetCommand = "tobreset"
 
+-- Block new heists this many minutes before a txAdmin scheduled restart (0 = off).
+-- txAdmin warns at 30, 15, 10, 5, 4, 3, 2 and 1 minutes, so the block starts at the first warning inside this window.
+SV.BlockBeforeRestart = 15
+
 -- Print a message in the server console when a newer version is released on GitHub
 SV.CheckForUpdates = true

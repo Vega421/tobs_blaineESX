@@ -2,7 +2,7 @@
 
 # tobs_blaine · ESX
 
-**Paleto Bay bank heist for FiveM**
+**Paleto and Fleeca bank heists for FiveM**
 
 [![Release](https://img.shields.io/github/v/release/Vega421/tobs_blaineESX?style=flat-square&color=ff6b2c&label=release)](https://github.com/Vega421/tobs_blaineESX/releases/latest)
 [![License](https://img.shields.io/github/license/Vega421/tobs_blaineESX?style=flat-square)](LICENSE)
@@ -18,11 +18,13 @@ Hack the security panel, open the vault and grab the cash from three trolleys be
 
 ## Features
 
+- Paleto Bay plus all 6 Fleeca banks
 - Hacking minigame, police alerts and three cash trolleys
 - Server-side anti-cheat, Discord logs and an admin reset command
 - Uses ox_lib, ox_target and your dispatch script when you have them
 - Rewards as cash or items, optional thermite-style vault step
-- English and Danish, easy to translate, more banks from the config
+- English and Danish, easy to translate, add your own banks from the config
+- Minimum crew size, one-heist-at-a-time, and no heists right before a restart
 - Almost no performance cost when nobody is near the bank
 
 ## Install

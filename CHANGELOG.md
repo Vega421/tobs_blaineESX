@@ -4,6 +4,15 @@ All notable changes to tobs_blaine (ESX). Each version is also a [GitHub release
 
 Full documentation: https://vega421.github.io/script-docs/scripts/tobs-blaine/
 
+## 1.4.0 · 2026-09-21
+
+- **All 6 Fleeca banks** included, with an inner gate the robber hacks to reach the last trolley (positions from utkuali/Fleeca-Bank-Heists). Turn them off with `TOB.FleecaBanks = false`
+- `TOB.GateItem`: optional item for the inner gate, such as `secure_card`
+- `TOB.MinCrew`: minimum number of robbers at the panel to start
+- `TOB.OneAtATime` and `TOB.GlobalCooldown`: stop players chaining banks
+- `SV.BlockBeforeRestart`: no new heists shortly before a txAdmin scheduled restart
+- Every bank has a `label` (shown in Discord logs) and an `enabled` switch
+
 ## 1.3.1 · 2026-09-21
 
 - Files organized into `config/`, `locales/`, `client/` and `server/` folders. `TOB.lua` is now `config/config.lua`. When updating, replace the whole `tobs_blaine` folder and copy your settings into the new config files

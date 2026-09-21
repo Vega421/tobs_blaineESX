@@ -4,6 +4,7 @@ Check = {}          -- [bank] = true while this player has started a heist there
 LootCheck = {}      -- [bank] = {Stop, Loot1, Loot2, Loot3}
 LootActive = {}     -- [bank] = true while the loot phase is running
 AwaitingVault = {}  -- [bank] = true while the robber still has to use TOB.VaultItem
+AwaitingGate = {}   -- [bank] = true while the robber can hack the inner gate (banks with doors.secondloc)
 Doors = {}
 local ready = false
 local disableinput = false
@@ -86,12 +87,17 @@ local function StartVec(bank)
     return vector3(s.x, s.y, s.z)
 end
 
+-- Models can be a name or a number (hash), for example the Great Ocean Highway Fleeca vault
+local function ModelHash(model)
+    return type(model) == "number" and model or GetHashKey(model)
+end
+
 local function GateModel(bank)
-    return GetHashKey(TOB.Banks[bank].gateModel or TOB.door)
+    return ModelHash(TOB.Banks[bank].gateModel or TOB.door)
 end
 
 local function VaultModel(bank)
-    return GetHashKey(TOB.Banks[bank].vaultModel or TOB.vaultdoor)
+    return ModelHash(TOB.Banks[bank].vaultModel or TOB.vaultdoor)
 end
 
 local function GetVaultObject(bank)
@@ -212,6 +218,7 @@ AddEventHandler("TOB_fh:forceReset", function(name)
     end
     LootActive[name] = false
     AwaitingVault[name] = nil
+    AwaitingGate[name] = nil
     Check[name] = false
     if currentname == name then
         initiator = false
@@ -364,6 +371,7 @@ end)
 
 AddEventHandler("TOB_fh:reset", function(name, data)
     Check[name] = false
+    AwaitingGate[name] = nil
     Notify("error", L("vault_closing_soon", TOB.VaultCloseDelay))
     Citizen.Wait(TOB.VaultCloseDelay * 1000)
     Notify("error", L("vault_closing"))
@@ -376,6 +384,7 @@ local function FailHeist(name, reason)
     Check[name] = false
     initiator = false
     AwaitingVault[name] = nil
+    AwaitingGate[name] = nil
     if IdProp ~= nil and DoesEntityExist(IdProp) then
         DeleteEntity(IdProp)
     end
@@ -437,7 +446,36 @@ function OpenVault(name)
     timerLeft = TOB.timer
     Notify("error", L("security_timer", string.format("%d:%02d", math.floor(TOB.timer / 60), TOB.timer % 60)))
     SpawnTrolleys(TOB.Banks[name], name)
+    if TOB.Banks[name].doors.secondloc ~= nil then
+        AwaitingGate[name] = true
+        Notify("inform", L("gate_hint"), 8000)
+    end
 end
+
+-- Inner gate (banks with doors.secondloc): the robber hacks a second panel to reach the last trolley
+function UseGate(name)
+    if not AwaitingGate[name] then return end
+    TriggerServerEvent("TOB_fh:useGate", name)
+end
+
+RegisterNetEvent("TOB_fh:gateResult")
+AddEventHandler("TOB_fh:gateResult", function(name, ok)
+    if not ok then
+        Notify("error", L("no_gate_item", TOB.GateItemLabel))
+        return
+    end
+    AwaitingGate[name] = nil
+    local ped = PlayerPedId()
+    local second = TOB.Banks[name].doors.secondloc
+
+    SetEntityCoords(ped, second.animcoords.x, second.animcoords.y, second.animcoords.z)
+    SetEntityHeading(ped, second.animcoords.h)
+    TaskStartScenarioInPlace(ped, "PROP_HUMAN_ATM", 0, true)
+    Progress(TOB.GateHackTime, L("hacking_gate"))
+    ClearPedTasks(ped)
+    TriggerServerEvent("TOB_fh:toggleDoor", name, false)
+    Notify("success", L("gate_open"))
+end)
 
 -- Extra vault step (TOB.VaultItem): the robber has TOB.timer seconds to use the item on the vault door
 function WaitForVaultItem(name)
@@ -693,6 +731,18 @@ Citizen.CreateThread(function()
                         TriggerServerEvent("TOB_fh:startcheck", k)
                     end
                 end
+                if AwaitingGate[k] then
+                    local g = v.doors.secondloc
+                    local gdst = #(coords - vector3(g.x, g.y, g.z))
+
+                    if gdst <= 5 then
+                        sleep = 0
+                        DrawText3D(g.x, g.y, g.z, "[~r~E~w~] " .. L("hack_gate"), 0.40)
+                        if gdst <= 1.2 and IsControlJustReleased(0, 38) then
+                            UseGate(k)
+                        end
+                    end
+                end
                 if AwaitingVault[k] then
                     local vt = Doors[k][2].txtloc
                     local vdst = #(coords - vt)
@@ -732,6 +782,25 @@ function RegisterTargets()
                 end
             }}
         })
+
+        if v.doors.secondloc ~= nil then
+            local second = v.doors.secondloc
+
+            exports.ox_target:addSphereZone({
+                coords = vector3(second.x, second.y, second.z),
+                radius = 1.0,
+                options = {{
+                    name = "tob_gate_" .. k,
+                    icon = "fa-solid fa-laptop-code",
+                    label = L("hack_gate"),
+                    distance = 1.5,
+                    canInteract = function()
+                        return AwaitingGate[k] == true
+                    end,
+                    onSelect = function() UseGate(k) end
+                }}
+            })
+        end
 
         for i = 1, 3 do
             local t = v["trolley" .. i]
