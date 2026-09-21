@@ -717,12 +717,12 @@ end)
 
 Citizen.CreateThread(function()
     while true do
-        if startdstcheck then
-            if initiator then
-                ShowTimer()
-            end
+        if startdstcheck and initiator then
+            ShowTimer()
+            Citizen.Wait(0)
+        else
+            Citizen.Wait(500)
         end
-        Citizen.Wait(1)
     end
 end)
 
